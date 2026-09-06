@@ -1,0 +1,6 @@
+*.exe
+*.pdb
+*.lnk
+last-error.txt
+quota-check*.json
+dist/
