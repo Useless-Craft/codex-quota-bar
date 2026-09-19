@@ -185,13 +185,17 @@ namespace CodexQuotaBar
 
         private static bool IsResetSignal(Dictionary<string, object> item)
         {
-            string text = Flatten(item);
+            string text = String.Join(" ", new[] { "id", "origin", "kind", "scope", "title" }
+                .Select(key => Text(Quota.Get(item, key)) ?? String.Empty));
             if (text.IndexOf("reset", StringComparison.OrdinalIgnoreCase) >= 0
                 || text.IndexOf("allowance", StringComparison.OrdinalIgnoreCase) >= 0
                 || text.IndexOf("quota", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            bool hasTiboSource = text.IndexOf("tibo", StringComparison.OrdinalIgnoreCase) >= 0
+            string sources = FindUrl(Quota.Get(item, "sources")) ?? Flatten(Quota.Get(item, "sources"));
+            bool hasTiboSource = (text + " " + sources).IndexOf("tibo", StringComparison.OrdinalIgnoreCase) >= 0
                 || text.IndexOf("thsottiaux", StringComparison.OrdinalIgnoreCase) >= 0
-                || text.IndexOf("savemetibo", StringComparison.OrdinalIgnoreCase) >= 0;
+                || text.IndexOf("savemetibo", StringComparison.OrdinalIgnoreCase) >= 0
+                || sources.IndexOf("thsottiaux", StringComparison.OrdinalIgnoreCase) >= 0
+                || sources.IndexOf("savemetibo", StringComparison.OrdinalIgnoreCase) >= 0;
             bool hasExplicitTime = new[] { "scheduledAt", "resetAt", "nextResetAt", "deadlineAt", "announcementAt" }
                 .Any(key => Quota.Get(item, key) != null);
             return hasTiboSource && hasExplicitTime;
