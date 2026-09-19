@@ -8,15 +8,20 @@ Show your weekly remaining quota and next reset time beside **Help** in the Wind
 
 **每周额度剩余 11%**　│　重置时间 2026年9月6日 19:29
 
+When a public signal is available, a third segment shows a Tibo reset signal or the estimated next-24-hour probability, for example `Tibo 24h 16%`. This is an experimental third-party estimate from NextReset, not an OpenAI commitment.
+
 These are formatting examples. Live values come from the currently signed-in Codex account.
 
 ## Features
 
-- A compact rounded capsule containing just weekly remaining quota and reset time.
+- A compact rounded capsule containing weekly remaining quota and reset time, plus a Tibo status when space allows. If the menu is too close to the edge, the original two fields stay visible and the full Tibo status remains in the tooltip.
 - Automatic light and dark appearance; orange at 20% remaining or less, red at 10% or less.
 - Follows the Codex UI language: Chinese for Chinese locales, English otherwise. Dates use local time and a 24-hour clock.
 - Multiple Codex windows, with window-event tracking for immediate movement and matching minimize, occlusion and close behavior.
 - One shared quota refresh every 60 seconds. Right-click to refresh manually or exit.
+- NextReset is refreshed asynchronously every 15 minutes, with an 8-second request timeout. No account ID, quota, login information or X credentials are sent.
+- Only a future absolute timestamp supplied by the source is used. Vague text such as “tonight” or “tomorrow” becomes `Tibo signal · time unknown`; no countdown is invented. Expired or failed data shows `Tibo not updated`.
+- The tooltip includes the source, update time, expiry time and experimental disclaimer. Right-click opens the Tibo forecast page.
 - A dedicated shortcut starts Codex with the quota bar. Closing the last Codex window closes the tool and its reader process.
 
 ## Requirements
@@ -29,7 +34,7 @@ This is an independent community project, unaffiliated with OpenAI. It does not 
 
 ## Download and run
 
-1. Download `codex-quota-bar-v1.0.0-windows-x64.zip` from [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest).
+1. Download `codex-quota-bar-v1.1.0-windows-x64.zip` from [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest).
 2. **Extract the entire ZIP** into a folder you intend to keep.
 3. With Codex open, double-click `CodexQuotaBar.exe`.
 
@@ -76,7 +81,9 @@ The tool starts its own installed Codex CLI process with `app-server --stdio` an
 
 It reuses the existing Codex login, does not start model conversations, purchase quota or redeem reset credits, and has no additional telemetry or upload service. It reads `locale` from `CODEX_HOME/computer-use/config.json`, defaulting to the user's `.codex` folder when `CODEX_HOME` is unset. Temporarily unavailable locale data preserves the last language; the initial default is English.
 
-A temporary UI Automation process locates the menu, with a five-second timeout. Failed probes retain the last valid position. A successful probe is rechecked after 30 seconds, a failed one after 10 seconds; new windows, language changes and DPI changes trigger another probe. Movement uses cached positions and WinEvent notifications without waiting for menu reads.
+The Tibo segment reads the public JSON endpoint at `https://nextreset.ai/api/forecast`. It uses the 24-hour probability, `asOf`, `expiresAt` and an explicit future timestamp only when the source supplies one. Relative wording is never converted into a made-up time. NextReset is an experimental public estimate that can be delayed, degraded or changed; it is not an OpenAI service guarantee. The context-menu command **Open Tibo forecast** opens [NextReset forecast](https://nextreset.ai/forecast/).
+
+A temporary UI Automation process locates the menu, with a five-second timeout. Failed probes retain the last valid position. A successful probe is rechecked after 30 seconds, a failed one after 10 seconds; new windows, language changes and DPI changes trigger another probe. Movement uses cached positions and WinEvent notifications without waiting for menu reads. The Tibo request runs in a separate asynchronous flow and cannot block movement, menu discovery, quota reads or exit.
 
 ## Troubleshooting
 

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Principal;
@@ -93,6 +94,209 @@ namespace CodexQuotaBar
         }
     }
 
+    internal sealed class TiboForecast
+    {
+        internal const string ForecastUrl = "https://nextreset.ai/forecast/";
+        internal const string ApiUrl = "https://nextreset.ai/api/forecast";
+        internal bool IsFresh;
+        internal bool HasAnnouncement;
+        internal int? Probability24h;
+        internal DateTimeOffset? AnnouncementTimeUtc;
+        internal DateTimeOffset? AsOf;
+        internal DateTimeOffset? ExpiresAt;
+        internal string SourceUrl;
+        internal string Error;
+
+        internal bool Usable { get { return IsFresh && (HasAnnouncement || Probability24h.HasValue); } }
+
+        internal static TiboForecast Failure(string error)
+        {
+            return new TiboForecast { IsFresh = false, Error = String.IsNullOrWhiteSpace(error) ? "读取失败" : error };
+        }
+
+        private static IEnumerable<object> Items(object value)
+        {
+            var enumerable = value as System.Collections.IEnumerable;
+            return enumerable == null || value is string ? Enumerable.Empty<object>() : enumerable.Cast<object>();
+        }
+
+        private static string Text(object value)
+        {
+            return value == null ? null : Convert.ToString(value, CultureInfo.InvariantCulture);
+        }
+
+        private static DateTimeOffset? Timestamp(object value)
+        {
+            if (value == null) return null;
+            double seconds;
+            if (Double.TryParse(Text(value), NumberStyles.Float, CultureInfo.InvariantCulture, out seconds)
+                && seconds > 1000000000 && seconds < 10000000000)
+                return new DateTimeOffset(Quota.Epoch).AddSeconds(seconds).ToUniversalTime();
+            DateTimeOffset parsed;
+            if (DateTimeOffset.TryParse(Text(value), CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out parsed))
+                return parsed.ToUniversalTime();
+            return null;
+        }
+
+        private static double? Number(object value)
+        {
+            if (value == null) return null;
+            double parsed;
+            return Double.TryParse(Text(value), NumberStyles.Float, CultureInfo.InvariantCulture, out parsed)
+                && !Double.IsNaN(parsed) && !Double.IsInfinity(parsed) ? (double?)parsed : null;
+        }
+
+        private static string FindUrl(object value)
+        {
+            string text = value as string;
+            if (!String.IsNullOrWhiteSpace(text) && (text.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+                || text.StartsWith("http://", StringComparison.OrdinalIgnoreCase))) return text;
+            var dictionary = value as Dictionary<string, object>;
+            if (dictionary != null)
+            {
+                foreach (string key in new[] { "url", "href", "link", "sourceUrl" })
+                {
+                    string url = FindUrl(Quota.Get(dictionary, key));
+                    if (!String.IsNullOrWhiteSpace(url)) return url;
+                }
+                foreach (object child in dictionary.Values)
+                {
+                    string url = FindUrl(child);
+                    if (!String.IsNullOrWhiteSpace(url)) return url;
+                }
+            }
+            foreach (object child in Items(value))
+            {
+                string url = FindUrl(child);
+                if (!String.IsNullOrWhiteSpace(url)) return url;
+            }
+            return null;
+        }
+
+        private static string Flatten(object value)
+        {
+            if (value == null) return String.Empty;
+            if (value is string) return (string)value;
+            var dictionary = value as Dictionary<string, object>;
+            if (dictionary != null) return String.Join(" ", dictionary.Values.Select(Flatten));
+            return String.Join(" ", Items(value).Select(Flatten));
+        }
+
+        private static bool IsResetSignal(Dictionary<string, object> item)
+        {
+            string text = Flatten(item);
+            if (text.IndexOf("reset", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("allowance", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("quota", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            bool hasTiboSource = text.IndexOf("tibo", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("thsottiaux", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("savemetibo", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool hasExplicitTime = new[] { "scheduledAt", "resetAt", "nextResetAt", "deadlineAt", "announcementAt" }
+                .Any(key => Quota.Get(item, key) != null);
+            return hasTiboSource && hasExplicitTime;
+        }
+
+        private static bool IsActive(Dictionary<string, object> item, DateTimeOffset now)
+        {
+            string status = Text(Quota.Get(item, "status"));
+            if (status == "expired" || status == "inactive" || status == "dismissed" || status == "rejected") return false;
+            DateTimeOffset? expires = Timestamp(Quota.Get(item, "expiresAt"));
+            if (expires.HasValue && expires.Value <= now) return false;
+            DateTimeOffset? published = Timestamp(Quota.Get(item, "publishedAt"));
+            if (published.HasValue && published.Value > now.AddMinutes(5)) return false;
+            return true;
+        }
+
+        private static DateTimeOffset? FindExactTime(Dictionary<string, object> item, DateTimeOffset now)
+        {
+            // Only absolute timestamps with an explicit field name are accepted. In particular,
+            // expiresAt describes signal validity and is never treated as a reset deadline.
+            foreach (string key in new[] { "scheduledAt", "resetAt", "nextResetAt", "deadlineAt", "announcementAt" })
+            {
+                DateTimeOffset? candidate = Timestamp(Quota.Get(item, key));
+                if (candidate.HasValue && candidate.Value > now) return candidate;
+            }
+            return null;
+        }
+
+        internal static TiboForecast Parse(string payload, DateTimeOffset now)
+        {
+            object root = new JavaScriptSerializer().DeserializeObject(payload);
+            var document = root as Dictionary<string, object>;
+            if (document == null) throw new InvalidOperationException("预测接口返回的 JSON 不是对象。");
+            var forecast = new TiboForecast {
+                AsOf = Timestamp(Quota.Get(document, "asOf")),
+                ExpiresAt = Timestamp(Quota.Get(document, "expiresAt")),
+                SourceUrl = ForecastUrl
+            };
+            string state = Text(Quota.Get(document, "state"));
+            bool degradedValue;
+            bool degraded = Boolean.TryParse(Text(Quota.Get(document, "degraded")), out degradedValue) && degradedValue;
+            forecast.IsFresh = forecast.AsOf.HasValue && forecast.ExpiresAt.HasValue && forecast.ExpiresAt.Value > now
+                && !degraded && !String.Equals(state, "error", StringComparison.OrdinalIgnoreCase)
+                && !String.Equals(state, "stale", StringComparison.OrdinalIgnoreCase);
+
+            foreach (object entry in Items(Quota.Get(document, "windows")))
+            {
+                var window = entry as Dictionary<string, object>;
+                if (window == null) continue;
+                double? hours = Number(Quota.Get(window, "hours"));
+                if (!hours.HasValue || Math.Abs(hours.Value - 24) > 0.01) continue;
+                double? probability = Number(Quota.Get(window, "probability"));
+                if (probability.HasValue && probability.Value >= 0 && probability.Value <= 1)
+                    forecast.Probability24h = (int)Math.Round(probability.Value * 100, MidpointRounding.AwayFromZero);
+                break;
+            }
+
+            foreach (object entry in Items(Quota.Get(Quota.Get(document, "news"), "events")))
+            {
+                var item = entry as Dictionary<string, object>;
+                if (item == null || !IsResetSignal(item) || !IsActive(item, now)) continue;
+                forecast.HasAnnouncement = true;
+                forecast.AnnouncementTimeUtc = FindExactTime(item, now)
+                    ?? FindExactTime(document, now);
+                string url = FindUrl(Quota.Get(item, "sources"));
+                if (!String.IsNullOrWhiteSpace(url)) forecast.SourceUrl = url;
+                break;
+            }
+            if (!forecast.HasAnnouncement)
+            {
+                DateTimeOffset? rootTime = FindExactTime(document, now);
+                if (rootTime.HasValue)
+                {
+                    forecast.HasAnnouncement = true;
+                    forecast.AnnouncementTimeUtc = rootTime;
+                }
+            }
+            if (!forecast.Usable) forecast.IsFresh = false;
+            return forecast;
+        }
+    }
+
+    internal sealed class TiboForecastClient : IDisposable
+    {
+        private readonly HttpClient client = new HttpClient();
+
+        internal TiboForecastClient()
+        {
+            client.Timeout = TimeSpan.FromSeconds(8);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1 (+https://github.com/Useless-Craft/codex-quota-bar)");
+        }
+
+        internal async Task<TiboForecast> Read()
+        {
+            using (HttpResponseMessage response = await client.GetAsync(TiboForecast.ApiUrl))
+            {
+                response.EnsureSuccessStatusCode();
+                string payload = await response.Content.ReadAsStringAsync();
+                return TiboForecast.Parse(payload, DateTimeOffset.UtcNow);
+            }
+        }
+
+        public void Dispose() { client.Dispose(); }
+    }
+
     internal sealed class QuotaClient : IDisposable
     {
         private Process process;
@@ -157,7 +361,7 @@ namespace CodexQuotaBar
                     process.ErrorDataReceived += delegate { };
                     process.Start();
                     process.BeginErrorReadLine();
-                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.0.0" } });
+                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.0" } });
                     process.StandardInput.WriteLine("{\"method\":\"initialized\",\"params\":{}}");
                 }
                 return Quota.Parse(await Request("account/rateLimits/read", null));
@@ -438,9 +642,10 @@ namespace CodexQuotaBar
         private IntPtr movementHook;
         private IntPtr handle;
         private Quota quota;
+        private TiboForecast forecast;
         private string error;
         private string display;
-        private bool closed, lightTheme;
+        private bool closed, lightTheme, forecastInline = true;
         private bool chinese = true;
 
         internal Bar(Anchor initial, Func<Task> refreshQuota, Action quitAll)
@@ -463,9 +668,16 @@ namespace CodexQuotaBar
             Content = surface;
             var refresh = new MenuItem { Header = "刷新额度" };
             refresh.Click += async delegate { await refreshQuota(); };
+            var openForecast = new MenuItem { Header = "打开 Tibo 预测" };
+            openForecast.Click += delegate {
+                try { Process.Start(new ProcessStartInfo(TiboForecast.ForecastUrl) { UseShellExecute = true }); }
+                catch (InvalidOperationException) { }
+                catch (System.ComponentModel.Win32Exception) { }
+            };
             var quit = new MenuItem { Header = "退出额度显示" };
             quit.Click += delegate { quitAll(); };
             menu.Items.Add(refresh);
+            menu.Items.Add(openForecast);
             menu.Items.Add(quit);
             surface.ContextMenu = menu;
             surface.MouseLeftButtonDown += delegate(object sender, MouseButtonEventArgs e) {
@@ -516,6 +728,15 @@ namespace CodexQuotaBar
             if (handle != IntPtr.Zero) UpdatePlacement();
         }
 
+        internal void SetForecast(TiboForecast current)
+        {
+            if (closed) return;
+            forecast = current;
+            display = null;
+            UpdateText();
+            if (handle != IntPtr.Zero) UpdatePlacement();
+        }
+
         internal void UpdateTheme()
         {
             if (closed) return;
@@ -546,6 +767,45 @@ namespace CodexQuotaBar
             if (handle != IntPtr.Zero) UpdatePlacement();
         }
 
+        private string ForecastLabel()
+        {
+            if (forecast == null || !forecast.Usable) return chinese ? "Tibo未更新" : "Tibo not updated";
+            if (forecast.HasAnnouncement)
+            {
+                if (forecast.AnnouncementTimeUtc.HasValue)
+                {
+                    DateTime local = forecast.AnnouncementTimeUtc.Value.ToLocalTime().DateTime;
+                    return chinese ? "Tibo预告 " + local.ToString("M月d日 HH:mm", CultureInfo.GetCultureInfo("zh-CN"))
+                        : "Tibo ETA " + local.ToString("MMM d, HH:mm", CultureInfo.GetCultureInfo("en-US"));
+                }
+                return chinese ? "Tibo预告：时间未定" : "Tibo signal · time unknown";
+            }
+            return chinese ? "Tibo概率 " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
+                : "Tibo 24h " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%";
+        }
+
+        private string ForecastTimestamp(DateTimeOffset? value)
+        {
+            if (!value.HasValue) return chinese ? "未提供" : "N/A";
+            return value.Value.ToLocalTime().ToString(chinese ? "yyyy年M月d日 HH:mm" : "MMM d, yyyy, HH:mm",
+                CultureInfo.GetCultureInfo(chinese ? "zh-CN" : "en-US"));
+        }
+
+        private string ForecastTooltip()
+        {
+            if (forecast == null)
+                return chinese ? "Tibo 实验性预测 · 等待 NextReset 数据" : "Tibo experimental forecast · Waiting for NextReset data";
+            string status = forecast.Usable ? ForecastLabel() : (chinese ? "Tibo未更新" : "Tibo not updated");
+            string source = String.IsNullOrWhiteSpace(forecast.SourceUrl) ? TiboForecast.ForecastUrl : forecast.SourceUrl;
+            string details = chinese
+                ? "Tibo 实验性预测 · 来源 NextReset\n来源链接：" + source + "\n状态：" + status + "\n更新时间：" + ForecastTimestamp(forecast.AsOf)
+                    + "\n有效期至：" + ForecastTimestamp(forecast.ExpiresAt)
+                : "Tibo experimental forecast · Source: NextReset\nSource link: " + source + "\nStatus: " + status + "\nUpdated: " + ForecastTimestamp(forecast.AsOf)
+                    + "\nValid until: " + ForecastTimestamp(forecast.ExpiresAt);
+            if (!String.IsNullOrWhiteSpace(forecast.Error)) details += chinese ? "\n读取失败：" + forecast.Error : "\nRead error: " + forecast.Error;
+            return details + (chinese ? "\n预测仅供参考，不代表 OpenAI 承诺。" : "\nExperimental estimate; not an OpenAI commitment.");
+        }
+
         private void UpdateText()
         {
             DateTime now = DateTime.UtcNow;
@@ -557,13 +817,17 @@ namespace CodexQuotaBar
             string remainingSuffix = !chinese && hasRemaining ? " left" : "";
             string resetTime = error != null ? unavailable : quota == null ? loading : Quota.ResetTime(quota.ResetsAt, chinese);
             string weeklyLabel = chinese ? "每周额度剩余 " : "Weekly usage limit ", resetLabel = chinese ? "重置时间 " : "Resets ";
-            string next = weeklyLabel + amount + remainingSuffix + "  |  " + resetLabel + resetTime;
+            bool showForecast = forecast != null && forecastInline;
+            string forecastLabel = showForecast ? ForecastLabel() : null;
+            string next = weeklyLabel + amount + remainingSuffix + "  |  " + resetLabel + resetTime
+                + (showForecast ? "  |  " + forecastLabel : "");
             if (next == display) return;
             display = next;
             surface.Background = new SolidColorBrush(lightTheme ? Color.FromRgb(238, 243, 239) : Color.FromRgb(42, 53, 46));
             surface.BorderBrush = new SolidColorBrush(lightTheme ? Color.FromRgb(206, 218, 209) : Color.FromRgb(67, 83, 73));
             label.Foreground = new SolidColorBrush(lightTheme ? Color.FromRgb(92, 111, 98) : Color.FromRgb(174, 189, 180));
             var ink = new SolidColorBrush(lightTheme ? Color.FromRgb(38, 56, 45) : Color.FromRgb(227, 237, 230));
+            var forecastInk = new SolidColorBrush(lightTheme ? Color.FromRgb(47, 85, 112) : Color.FromRgb(157, 201, 226));
             label.Inlines.Clear();
             label.Inlines.Add(new Run(weeklyLabel) { FontSize = 13, FontWeight = FontWeights.SemiBold });
             var value = new Run(amount) { FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = ink };
@@ -578,11 +842,18 @@ namespace CodexQuotaBar
             label.Inlines.Add(new InlineUIContainer(new Border { Width = 1, Height = 12, Margin = new Thickness(9, 0, 9, 0), Background = surface.BorderBrush }) { BaselineAlignment = BaselineAlignment.Center });
             label.Inlines.Add(new Run(resetLabel));
             label.Inlines.Add(new Run(resetTime) { FontSize = 13, Foreground = ink });
+            if (showForecast)
+            {
+                label.Inlines.Add(new InlineUIContainer(new Border { Width = 1, Height = 12, Margin = new Thickness(9, 0, 9, 0), Background = surface.BorderBrush }) { BaselineAlignment = BaselineAlignment.Center });
+                label.Inlines.Add(new Run(forecastLabel) { FontSize = 12.5, FontWeight = FontWeights.SemiBold, Foreground = forecastInk });
+            }
             ((MenuItem)menu.Items[0]).Header = chinese ? "刷新额度" : "Refresh quota";
-            ((MenuItem)menu.Items[1]).Header = chinese ? "退出额度显示" : "Exit quota display";
-            label.ToolTip = chinese
+            ((MenuItem)menu.Items[1]).Header = chinese ? "打开 Tibo 预测" : "Open Tibo forecast";
+            ((MenuItem)menu.Items[2]).Header = chinese ? "退出额度显示" : "Exit quota display";
+            string quotaTooltip = chinese
                 ? (error == null ? "Codex 账户周额度 · 每 60 秒刷新 · 右键退出" : "额度读取失败：" + error)
                 : (error == null ? "Codex weekly quota · Refreshes every 60s · Right-click for options" : "Unable to refresh quota. Retrying every 60s. Right-click for options.");
+            label.ToolTip = quotaTooltip + "\n\n" + ForecastTooltip();
             Title = "Codex Quota Bar — " + display;
             AutomationProperties.SetName(label, display);
         }
@@ -606,10 +877,40 @@ namespace CodexQuotaBar
                 anchor.CenterY *= scale / anchor.Dpi;
                 anchor.Dpi = scale;
             }
-            surface.Measure(new Size(Double.PositiveInfinity, Height));
-            int width = (int)Math.Ceiling(surface.DesiredSize.Width * scale) + 2;
             Native.Rectangle clientRect;
             Native.GetClientRect(anchor.Window, out clientRect);
+            surface.Measure(new Size(Double.PositiveInfinity, Height));
+            int width = (int)Math.Ceiling(surface.DesiredSize.Width * scale) + 2;
+            bool enough = anchor.X + width <= clientRect.Right - 140 * scale;
+            if (!enough && forecastInline && forecast != null)
+            {
+                // Keep the original two quota fields visible when the third segment would
+                // crowd the menu. Its full status remains available in the hover tooltip.
+                forecastInline = false;
+                display = null;
+                UpdateText();
+                surface.Measure(new Size(Double.PositiveInfinity, Height));
+                width = (int)Math.Ceiling(surface.DesiredSize.Width * scale) + 2;
+                enough = anchor.X + width <= clientRect.Right - 140 * scale;
+            }
+            else if (enough && !forecastInline && forecast != null)
+            {
+                // Re-enable the third segment after a resize or a wider menu becomes available.
+                forecastInline = true;
+                display = null;
+                UpdateText();
+                surface.Measure(new Size(Double.PositiveInfinity, Height));
+                width = (int)Math.Ceiling(surface.DesiredSize.Width * scale) + 2;
+                enough = anchor.X + width <= clientRect.Right - 140 * scale;
+                if (!enough)
+                {
+                    forecastInline = false;
+                    display = null;
+                    UpdateText();
+                    surface.Measure(new Size(Double.PositiveInfinity, Height));
+                    width = (int)Math.Ceiling(surface.DesiredSize.Width * scale) + 2;
+                }
+            }
             if (anchor.X + width > clientRect.Right - 140 * scale)
             {
                 if (IsVisible) Hide();
@@ -634,12 +935,15 @@ namespace CodexQuotaBar
         private readonly EventWaitHandle exit;
         private readonly Dictionary<IntPtr, Bar> bars = new Dictionary<IntPtr, Bar>();
         private readonly QuotaClient client = new QuotaClient();
+        private readonly TiboForecastClient forecastClient = new TiboForecastClient();
         private readonly MenuProbe menuProbe = new MenuProbe();
         private readonly DispatcherTimer windows = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         private readonly DispatcherTimer polling = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
+        private readonly DispatcherTimer forecastPolling = new DispatcherTimer { Interval = TimeSpan.FromMinutes(15) };
         private Quota quota;
+        private TiboForecast forecast;
         private string error;
-        private bool busy, closed, chinese, probing;
+        private bool busy, forecastBusy, closed, chinese, probing;
         private string layout;
         private DateTime nextProbe;
 
@@ -649,9 +953,10 @@ namespace CodexQuotaBar
             exit = exitEvent;
             windows.Tick += delegate { UpdateWindows(); };
             polling.Tick += async delegate { await RefreshQuota(); };
+            forecastPolling.Tick += async delegate { await RefreshForecast(); };
             app.Exit += delegate {
                 closed = true;
-                windows.Stop(); polling.Stop(); menuProbe.Dispose(); client.Dispose();
+                windows.Stop(); polling.Stop(); forecastPolling.Stop(); menuProbe.Dispose(); client.Dispose(); forecastClient.Dispose();
             };
         }
 
@@ -661,7 +966,8 @@ namespace CodexQuotaBar
             if (closed) return;
             windows.Start();
             polling.Start();
-            await RefreshQuota();
+            forecastPolling.Start();
+            await Task.WhenAll(RefreshQuota(), RefreshForecast());
         }
 
         private void UpdateWindows()
@@ -698,7 +1004,7 @@ namespace CodexQuotaBar
                     if (bars.TryGetValue(anchor.Window, out bar)) { bar.UpdateAnchor(anchor); continue; }
                     bar = new Bar(anchor, RefreshQuota, delegate { app.Shutdown(); });
                     bars.Add(anchor.Window, bar);
-                    try { bar.UpdateLanguage(chinese); bar.SetQuota(quota, error); bar.Start(); }
+                    try { bar.UpdateLanguage(chinese); bar.SetQuota(quota, error); bar.SetForecast(forecast); bar.Start(); }
                     catch (InvalidOperationException) { bar.Close(); bars.Remove(anchor.Window); }
                     catch (System.ComponentModel.Win32Exception) { bar.Close(); bars.Remove(anchor.Window); }
                 }
@@ -715,6 +1021,16 @@ namespace CodexQuotaBar
             catch (Exception failure) { error = failure.Message; }
             finally { busy = false; }
             if (!closed) foreach (Bar bar in bars.Values) bar.SetQuota(quota, error);
+        }
+
+        private async Task RefreshForecast()
+        {
+            if (forecastBusy || closed) return;
+            forecastBusy = true;
+            try { forecast = await forecastClient.Read(); }
+            catch (Exception failure) { forecast = TiboForecast.Failure(failure.Message); }
+            finally { forecastBusy = false; }
+            if (!closed) foreach (Bar bar in bars.Values) bar.SetForecast(forecast);
         }
     }
 

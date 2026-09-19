@@ -4,7 +4,7 @@ $quotaCompiler = Join-Path $quotaFramework 'csc.exe'
 if (-not (Test-Path -LiteralPath $quotaCompiler)) {
     throw 'The 64-bit .NET Framework compiler was not found. Windows with .NET Framework 4.8 is required.'
 }
-$quotaReferences = @('System.dll', 'System.Core.dll', 'System.Web.Extensions.dll', 'System.Xaml.dll') |
+$quotaReferences = @('System.dll', 'System.Core.dll', 'System.Net.Http.dll', 'System.Web.Extensions.dll', 'System.Xaml.dll') |
     ForEach-Object { '/reference:' + (Join-Path $quotaFramework $_) }
 $quotaReferences += @('WindowsBase.dll', 'PresentationCore.dll', 'PresentationFramework.dll', 'UIAutomationClient.dll', 'UIAutomationTypes.dll') |
     ForEach-Object { '/reference:' + (Join-Path $quotaFramework ('WPF\' + $_)) }
