@@ -431,7 +431,8 @@ namespace CodexQuotaBar
             {
                 using (Process process = Process.GetProcessById((int)id))
                 {
-                    if (process.ProcessName != "ChatGPT" && process.ProcessName != "Codex") return false;
+                    if (!String.Equals(process.ProcessName, "ChatGPT", StringComparison.OrdinalIgnoreCase)
+                        && !String.Equals(process.ProcessName, "Codex", StringComparison.OrdinalIgnoreCase)) return false;
                     string path = process.MainModule.FileName;
                     return path.IndexOf("\\OpenAI.Codex_", StringComparison.OrdinalIgnoreCase) >= 0
                         || path.IndexOf("\\OpenAI\\Codex\\", StringComparison.OrdinalIgnoreCase) >= 0;
