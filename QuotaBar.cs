@@ -100,14 +100,18 @@ namespace CodexQuotaBar
         internal const string ApiUrl = "https://nextreset.ai/api/forecast";
         internal bool IsFresh;
         internal bool HasAnnouncement;
+        internal bool HasCreditSignal;
         internal int? Probability24h;
         internal DateTimeOffset? AnnouncementTimeUtc;
+        internal DateTimeOffset? CreditTimeUtc;
+        internal DateTimeOffset? CreditPublishedAtUtc;
+        internal string CreditClassification;
         internal DateTimeOffset? AsOf;
         internal DateTimeOffset? ExpiresAt;
         internal string SourceUrl;
         internal string Error;
 
-        internal bool Usable { get { return IsFresh && (HasAnnouncement || Probability24h.HasValue); } }
+        internal bool Usable { get { return IsFresh && (HasAnnouncement || HasCreditSignal || Probability24h.HasValue); } }
 
         internal static TiboForecast Failure(string error)
         {
@@ -201,6 +205,30 @@ namespace CodexQuotaBar
             return hasTiboSource && hasExplicitTime;
         }
 
+        private static bool IsTiboSource(string value)
+        {
+            return !String.IsNullOrWhiteSpace(value)
+                && (value.IndexOf("thsottiaux", StringComparison.OrdinalIgnoreCase) >= 0
+                    || value.IndexOf("savemetibo", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        private static bool IsCreditClassification(string value)
+        {
+            return String.Equals(value, "credit", StringComparison.OrdinalIgnoreCase)
+                || String.Equals(value, "banked_credit", StringComparison.OrdinalIgnoreCase)
+                || String.Equals(value, "banked-credit", StringComparison.OrdinalIgnoreCase)
+                || String.Equals(value, "reset_credit", StringComparison.OrdinalIgnoreCase)
+                || String.Equals(value, "reset-credit", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsCreditSignal(Dictionary<string, object> social)
+        {
+            string classification = Text(Quota.Get(social, "classification"));
+            string source = FindUrl(Quota.Get(social, "source"))
+                ?? FindUrl(Quota.Get(social, "sources"));
+            return IsCreditClassification(classification) && IsTiboSource(source);
+        }
+
         private static bool IsActive(Dictionary<string, object> item, DateTimeOffset now)
         {
             string status = Text(Quota.Get(item, "status"));
@@ -217,6 +245,18 @@ namespace CodexQuotaBar
             // Only absolute timestamps with an explicit field name are accepted. In particular,
             // expiresAt describes signal validity and is never treated as a reset deadline.
             foreach (string key in new[] { "scheduledAt", "resetAt", "nextResetAt", "deadlineAt", "announcementAt" })
+            {
+                DateTimeOffset? candidate = Timestamp(Quota.Get(item, key));
+                if (candidate.HasValue && candidate.Value > now) return candidate;
+            }
+            return null;
+        }
+
+        private static DateTimeOffset? FindCreditTime(Dictionary<string, object> item, DateTimeOffset now)
+        {
+            // expectedBy is accepted only when the source supplies an absolute future timestamp.
+            // Natural-language wording is intentionally ignored.
+            foreach (string key in new[] { "expectedBy", "scheduledAt", "resetAt", "nextResetAt", "deadlineAt", "announcementAt" })
             {
                 DateTimeOffset? candidate = Timestamp(Quota.Get(item, key));
                 if (candidate.HasValue && candidate.Value > now) return candidate;
@@ -273,6 +313,20 @@ namespace CodexQuotaBar
                     forecast.AnnouncementTimeUtc = rootTime;
                 }
             }
+            var social = Quota.Get(document, "social") as Dictionary<string, object>;
+            if (social != null && IsCreditSignal(social) && IsActive(social, now))
+            {
+                forecast.HasCreditSignal = true;
+                forecast.CreditClassification = Text(Quota.Get(social, "classification"));
+                forecast.CreditPublishedAtUtc = Timestamp(Quota.Get(social, "publishedAt"));
+                forecast.CreditTimeUtc = FindCreditTime(social, now);
+                if (!forecast.HasAnnouncement)
+                {
+                    string url = FindUrl(Quota.Get(social, "source"))
+                        ?? FindUrl(Quota.Get(social, "sources"));
+                    if (!String.IsNullOrWhiteSpace(url)) forecast.SourceUrl = url;
+                }
+            }
             if (!forecast.Usable) forecast.IsFresh = false;
             return forecast;
         }
@@ -285,7 +339,7 @@ namespace CodexQuotaBar
         internal TiboForecastClient()
         {
             client.Timeout = TimeSpan.FromSeconds(8);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1 (+https://github.com/Useless-Craft/codex-quota-bar)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.1 (+https://github.com/Useless-Craft/codex-quota-bar)");
         }
 
         internal async Task<TiboForecast> Read()
@@ -365,7 +419,7 @@ namespace CodexQuotaBar
                     process.ErrorDataReceived += delegate { };
                     process.Start();
                     process.BeginErrorReadLine();
-                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.0" } });
+                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.1" } });
                     process.StandardInput.WriteLine("{\"method\":\"initialized\",\"params\":{}}");
                 }
                 return Quota.Parse(await Request("account/rateLimits/read", null));
@@ -772,6 +826,29 @@ namespace CodexQuotaBar
             if (handle != IntPtr.Zero) UpdatePlacement();
         }
 
+        private string ProbabilityLabel()
+        {
+            return chinese ? "Tibo概率 " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
+                : "Tibo 24h " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%";
+        }
+
+        private string ProbabilitySuffix()
+        {
+            return chinese ? "自动重置概率 " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
+                : "auto-reset " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%";
+        }
+
+        private string CreditLabel()
+        {
+            if (forecast.CreditTimeUtc.HasValue)
+            {
+                DateTime local = forecast.CreditTimeUtc.Value.ToLocalTime().DateTime;
+                return chinese ? "Tibo额度 " + local.ToString("M月d日 HH:mm", CultureInfo.GetCultureInfo("zh-CN"))
+                    : "Tibo credit " + local.ToString("MMM d, HH:mm", CultureInfo.GetCultureInfo("en-US"));
+            }
+            return chinese ? "Tibo额度信号：时间未定" : "Tibo credit signal · time unknown";
+        }
+
         private string ForecastLabel()
         {
             if (forecast == null || !forecast.Usable) return chinese ? "Tibo未更新" : "Tibo not updated";
@@ -785,8 +862,12 @@ namespace CodexQuotaBar
                 }
                 return chinese ? "Tibo预告：时间未定" : "Tibo signal · time unknown";
             }
-            return chinese ? "Tibo概率 " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
-                : "Tibo 24h " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%";
+            if (forecast.HasCreditSignal)
+            {
+                string credit = CreditLabel();
+                return forecast.Probability24h.HasValue ? credit + " · " + ProbabilitySuffix() : credit;
+            }
+            return forecast.Probability24h.HasValue ? ProbabilityLabel() : (chinese ? "Tibo未更新" : "Tibo not updated");
         }
 
         private string ForecastTimestamp(DateTimeOffset? value)
@@ -807,6 +888,12 @@ namespace CodexQuotaBar
                     + "\n有效期至：" + ForecastTimestamp(forecast.ExpiresAt)
                 : "Tibo experimental forecast · Source: NextReset\nSource link: " + source + "\nStatus: " + status + "\nUpdated: " + ForecastTimestamp(forecast.AsOf)
                     + "\nValid until: " + ForecastTimestamp(forecast.ExpiresAt);
+            if (forecast.HasCreditSignal)
+            {
+                details += chinese
+                    ? "\n额度事件：接口分类为 credit，与自动重置概率分开统计。\n额度信号发布时间：" + ForecastTimestamp(forecast.CreditPublishedAtUtc)
+                    : "\nCredit event: the API classifies it as credit and keeps it separate from the automatic-reset probability.\nCredit signal published: " + ForecastTimestamp(forecast.CreditPublishedAtUtc);
+            }
             if (!String.IsNullOrWhiteSpace(forecast.Error)) details += chinese ? "\n读取失败：" + forecast.Error : "\nRead error: " + forecast.Error;
             return details + (chinese ? "\n预测仅供参考，不代表 OpenAI 承诺。" : "\nExperimental estimate; not an OpenAI commitment.");
         }
