@@ -339,7 +339,7 @@ namespace CodexQuotaBar
         internal TiboForecastClient()
         {
             client.Timeout = TimeSpan.FromSeconds(8);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.1 (+https://github.com/Useless-Craft/codex-quota-bar)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.2 (+https://github.com/Useless-Craft/codex-quota-bar)");
         }
 
         internal async Task<TiboForecast> Read()
@@ -419,7 +419,7 @@ namespace CodexQuotaBar
                     process.ErrorDataReceived += delegate { };
                     process.Start();
                     process.BeginErrorReadLine();
-                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.1" } });
+                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.2" } });
                     process.StandardInput.WriteLine("{\"method\":\"initialized\",\"params\":{}}");
                 }
                 return Quota.Parse(await Request("account/rateLimits/read", null));
@@ -834,7 +834,7 @@ namespace CodexQuotaBar
 
         private string ProbabilitySuffix()
         {
-            return chinese ? "自动重置概率 " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
+            return chinese ? "自动重置" + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
                 : "auto-reset " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%";
         }
 
@@ -846,7 +846,7 @@ namespace CodexQuotaBar
                 return chinese ? "Tibo额度 " + local.ToString("M月d日 HH:mm", CultureInfo.GetCultureInfo("zh-CN"))
                     : "Tibo credit " + local.ToString("MMM d, HH:mm", CultureInfo.GetCultureInfo("en-US"));
             }
-            return chinese ? "Tibo额度信号：时间未定" : "Tibo credit signal · time unknown";
+            return chinese ? "Tibo额度" : "Tibo credit";
         }
 
         private string ForecastLabel()
@@ -891,8 +891,8 @@ namespace CodexQuotaBar
             if (forecast.HasCreditSignal)
             {
                 details += chinese
-                    ? "\n额度事件：接口分类为 credit，与自动重置概率分开统计。\n额度信号发布时间：" + ForecastTimestamp(forecast.CreditPublishedAtUtc)
-                    : "\nCredit event: the API classifies it as credit and keeps it separate from the automatic-reset probability.\nCredit signal published: " + ForecastTimestamp(forecast.CreditPublishedAtUtc);
+                    ? "\n额度事件：接口分类为 credit，与自动重置概率分开统计。\n额度信号时间：" + (forecast.CreditTimeUtc.HasValue ? ForecastTimestamp(forecast.CreditTimeUtc) : "未提供") + "\n额度信号发布时间：" + ForecastTimestamp(forecast.CreditPublishedAtUtc)
+                    : "\nCredit event: the API classifies it as credit and keeps it separate from the automatic-reset probability.\nCredit signal time: " + (forecast.CreditTimeUtc.HasValue ? ForecastTimestamp(forecast.CreditTimeUtc) : "not provided") + "\nCredit signal published: " + ForecastTimestamp(forecast.CreditPublishedAtUtc);
             }
             if (!String.IsNullOrWhiteSpace(forecast.Error)) details += chinese ? "\n读取失败：" + forecast.Error : "\nRead error: " + forecast.Error;
             return details + (chinese ? "\n预测仅供参考，不代表 OpenAI 承诺。" : "\nExperimental estimate; not an OpenAI commitment.");
