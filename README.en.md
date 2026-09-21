@@ -34,7 +34,7 @@ This is an independent community project, unaffiliated with OpenAI. It does not 
 
 ## Download and run
 
-1. Download `codex-quota-bar-v1.1.4-windows-x64.zip` from [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest).
+1. Download `codex-quota-bar-v1.1.5-windows-x64.zip` from [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest).
 2. **Extract the entire ZIP** into a folder you intend to keep.
 3. With Codex open, double-click `CodexQuotaBar.exe`.
 

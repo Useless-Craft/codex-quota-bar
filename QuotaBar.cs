@@ -339,7 +339,7 @@ namespace CodexQuotaBar
         internal TiboForecastClient()
         {
             client.Timeout = TimeSpan.FromSeconds(8);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.4 (+https://github.com/Useless-Craft/codex-quota-bar)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.5 (+https://github.com/Useless-Craft/codex-quota-bar)");
         }
 
         internal async Task<TiboForecast> Read()
@@ -419,7 +419,7 @@ namespace CodexQuotaBar
                     process.ErrorDataReceived += delegate { };
                     process.Start();
                     process.BeginErrorReadLine();
-                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.4" } });
+                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.5" } });
                     process.StandardInput.WriteLine("{\"method\":\"initialized\",\"params\":{}}");
                 }
                 return Quota.Parse(await Request("account/rateLimits/read", null));
@@ -704,6 +704,7 @@ namespace CodexQuotaBar
         private TiboForecast forecast;
         private string error;
         private string display;
+        private int expandedWidth;
         private bool closed, lightTheme, forecastInline = true;
         private bool chinese = true;
 
@@ -978,6 +979,7 @@ namespace CodexQuotaBar
             {
                 // Keep the original two quota fields visible when the third segment would
                 // crowd the menu. Its full status remains available in the hover tooltip.
+                expandedWidth = width;
                 forecastInline = false;
                 display = null;
                 UpdateText();
@@ -985,9 +987,12 @@ namespace CodexQuotaBar
                 width = (int)Math.Ceiling(surface.DesiredSize.Width * scale) + 2;
                 enough = anchor.X + width <= clientRect.Right - 140 * scale;
             }
-            else if (enough && !forecastInline && forecast != null)
+            else if (!forecastInline && forecast != null && expandedWidth > 0
+                && anchor.X + expandedWidth + 32 * scale <= clientRect.Right - 140 * scale)
             {
-                // Re-enable the third segment after a resize or a wider menu becomes available.
+                // Re-enable only after there is clear spare room. Without this hysteresis,
+                // the short label fits, the expanded label does not, and the 200 ms timer
+                // repeatedly adds and removes the third segment, causing visible flicker.
                 forecastInline = true;
                 display = null;
                 UpdateText();
@@ -996,6 +1001,7 @@ namespace CodexQuotaBar
                 enough = anchor.X + width <= clientRect.Right - 140 * scale;
                 if (!enough)
                 {
+                    expandedWidth = width;
                     forecastInline = false;
                     display = null;
                     UpdateText();

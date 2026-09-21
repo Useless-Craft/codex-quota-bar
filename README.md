@@ -34,7 +34,7 @@
 
 ## 下载与使用
 
-1. 从 [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest) 下载 `codex-quota-bar-v1.1.4-windows-x64.zip`。
+1. 从 [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest) 下载 `codex-quota-bar-v1.1.5-windows-x64.zip`。
 2. **完整解压**到一个准备长期保留的目录。
 3. Codex 已打开时，双击 `CodexQuotaBar.exe` 即可显示额度。
 
