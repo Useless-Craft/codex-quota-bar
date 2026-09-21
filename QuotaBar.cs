@@ -339,7 +339,7 @@ namespace CodexQuotaBar
         internal TiboForecastClient()
         {
             client.Timeout = TimeSpan.FromSeconds(8);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.2 (+https://github.com/Useless-Craft/codex-quota-bar)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.3 (+https://github.com/Useless-Craft/codex-quota-bar)");
         }
 
         internal async Task<TiboForecast> Read()
@@ -419,7 +419,7 @@ namespace CodexQuotaBar
                     process.ErrorDataReceived += delegate { };
                     process.Start();
                     process.BeginErrorReadLine();
-                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.2" } });
+                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.3" } });
                     process.StandardInput.WriteLine("{\"method\":\"initialized\",\"params\":{}}");
                 }
                 return Quota.Parse(await Request("account/rateLimits/read", null));
@@ -828,14 +828,14 @@ namespace CodexQuotaBar
 
         private string ProbabilityLabel()
         {
-            return chinese ? "Tibo概率 " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
-                : "Tibo 24h " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%";
+            return chinese ? "自动重置概率 " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
+                : "Auto-reset chance " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%";
         }
 
         private string ProbabilitySuffix()
         {
-            return chinese ? "自动重置" + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
-                : "auto-reset " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%";
+            return chinese ? "自动重置概率 " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
+                : "auto-reset chance " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%";
         }
 
         private string CreditLabel()
@@ -843,31 +843,31 @@ namespace CodexQuotaBar
             if (forecast.CreditTimeUtc.HasValue)
             {
                 DateTime local = forecast.CreditTimeUtc.Value.ToLocalTime().DateTime;
-                return chinese ? "Tibo额度 " + local.ToString("M月d日 HH:mm", CultureInfo.GetCultureInfo("zh-CN"))
-                    : "Tibo credit " + local.ToString("MMM d, HH:mm", CultureInfo.GetCultureInfo("en-US"));
+                return chinese ? "额度预告 " + local.ToString("M月d日 HH:mm", CultureInfo.GetCultureInfo("zh-CN"))
+                    : "Credit notice " + local.ToString("MMM d, HH:mm", CultureInfo.GetCultureInfo("en-US"));
             }
-            return chinese ? "Tibo额度" : "Tibo credit";
+            return chinese ? "额度提示" : "Credit signal";
         }
 
         private string ForecastLabel()
         {
-            if (forecast == null || !forecast.Usable) return chinese ? "Tibo未更新" : "Tibo not updated";
+            if (forecast == null || !forecast.Usable) return chinese ? "暂无重置信息" : "No reset update";
             if (forecast.HasAnnouncement)
             {
                 if (forecast.AnnouncementTimeUtc.HasValue)
                 {
                     DateTime local = forecast.AnnouncementTimeUtc.Value.ToLocalTime().DateTime;
-                    return chinese ? "Tibo预告 " + local.ToString("M月d日 HH:mm", CultureInfo.GetCultureInfo("zh-CN"))
-                        : "Tibo ETA " + local.ToString("MMM d, HH:mm", CultureInfo.GetCultureInfo("en-US"));
+                    return chinese ? "重置预告 " + local.ToString("M月d日 HH:mm", CultureInfo.GetCultureInfo("zh-CN"))
+                        : "Reset notice " + local.ToString("MMM d, HH:mm", CultureInfo.GetCultureInfo("en-US"));
                 }
-                return chinese ? "Tibo预告：时间未定" : "Tibo signal · time unknown";
+                return chinese ? "重置预告：时间未定" : "Reset notice · time unknown";
             }
             if (forecast.HasCreditSignal)
             {
                 string credit = CreditLabel();
                 return forecast.Probability24h.HasValue ? credit + " · " + ProbabilitySuffix() : credit;
             }
-            return forecast.Probability24h.HasValue ? ProbabilityLabel() : (chinese ? "Tibo未更新" : "Tibo not updated");
+            return forecast.Probability24h.HasValue ? ProbabilityLabel() : (chinese ? "暂无重置信息" : "No reset update");
         }
 
         private string ForecastTimestamp(DateTimeOffset? value)
@@ -881,7 +881,7 @@ namespace CodexQuotaBar
         {
             if (forecast == null)
                 return chinese ? "Tibo 实验性预测 · 等待 NextReset 数据" : "Tibo experimental forecast · Waiting for NextReset data";
-            string status = forecast.Usable ? ForecastLabel() : (chinese ? "Tibo未更新" : "Tibo not updated");
+            string status = forecast.Usable ? ForecastLabel() : (chinese ? "暂无重置信息" : "No reset update");
             string source = String.IsNullOrWhiteSpace(forecast.SourceUrl) ? TiboForecast.ForecastUrl : forecast.SourceUrl;
             string details = chinese
                 ? "Tibo 实验性预测 · 来源 NextReset\n来源链接：" + source + "\n状态：" + status + "\n更新时间：" + ForecastTimestamp(forecast.AsOf)
