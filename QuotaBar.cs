@@ -339,7 +339,7 @@ namespace CodexQuotaBar
         internal TiboForecastClient()
         {
             client.Timeout = TimeSpan.FromSeconds(8);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.3 (+https://github.com/Useless-Craft/codex-quota-bar)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.4 (+https://github.com/Useless-Craft/codex-quota-bar)");
         }
 
         internal async Task<TiboForecast> Read()
@@ -419,7 +419,7 @@ namespace CodexQuotaBar
                     process.ErrorDataReceived += delegate { };
                     process.Start();
                     process.BeginErrorReadLine();
-                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.3" } });
+                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.4" } });
                     process.StandardInput.WriteLine("{\"method\":\"initialized\",\"params\":{}}");
                 }
                 return Quota.Parse(await Request("account/rateLimits/read", null));
@@ -864,8 +864,8 @@ namespace CodexQuotaBar
             }
             if (forecast.HasCreditSignal)
             {
-                string credit = CreditLabel();
-                return forecast.Probability24h.HasValue ? credit + " · " + ProbabilitySuffix() : credit;
+                if (forecast.CreditTimeUtc.HasValue) return CreditLabel();
+                return forecast.Probability24h.HasValue ? ProbabilityLabel() : (chinese ? "暂无明确预告" : "No clear notice");
             }
             return forecast.Probability24h.HasValue ? ProbabilityLabel() : (chinese ? "暂无重置信息" : "No reset update");
         }
