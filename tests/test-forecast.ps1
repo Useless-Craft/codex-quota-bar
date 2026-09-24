@@ -42,6 +42,7 @@ Assert-Equal (Read-Field $result 'SourceUrl') 'https://x.com/thsottiaux/status/2
 
 $probabilityOnly = '{"updated_at":"2026-09-24T03:46:00Z","probabilities":{"rounded_24h":20},"official_signal":null}'
 $result = Parse-Forecast $probabilityOnly '2026-09-24T03:50:00Z'
+$probabilityResult = Parse-Forecast $probabilityOnly '2026-09-24T03:50:00Z'
 Assert-Equal (Read-Field $result 'HasAnnouncement') $false 'no announcement'
 Assert-Equal (Read-Field $result 'Probability24h') 20 'probability-only result'
 
@@ -53,8 +54,14 @@ $bankedResult = $result
 Assert-Equal (Read-Field $result 'LatestEventKind') 'banked' 'banked reset result'
 Assert-Equal (Read-Field $result 'SourceUrl') 'https://x.com/thsottiaux/status/2102463847714247142' 'banked reset source'
 
+$postResetResult = Parse-Forecast $probabilityOnly '2026-09-24T03:50:00Z'
+$completedFeed = '{"fetched_at":"2026-09-24T03:43:52Z","stale":false,"events":[{"group":"reset","announcement_state":"announced","announced_at":"2026-09-23T18:23:37Z","url":"https://x.com/thsottiaux/status/completed"}]}'
+Apply-Feed $postResetResult $completedFeed '2026-09-24T03:50:00Z'
+Assert-Equal (Read-Field $postResetResult 'LatestEventKind') 'reset' 'completed reset event parsed'
+
 $expiredSignal = '{"updated_at":"2026-09-23T07:05:00Z","probabilities":{"rounded_24h":18},"official_signal":{"url":"https://x.com/thsottiaux/status/1","window":{"label":"end of Tuesday","end_at":"2026-09-23T06:59:59Z","target_kind":"deadline"}}}'
 $result = Parse-Forecast $expiredSignal '2026-09-23T07:10:00Z'
+$expiredResult = $result
 Assert-Equal (Read-Field $result 'HasAnnouncement') $false 'expired announcement'
 Assert-Equal (Read-Field $result 'Probability24h') 18 'expired announcement keeps probability'
 
@@ -68,29 +75,44 @@ catch { $failed = $true }
 Assert-Equal $failed $true 'malformed JSON rejected'
 
 $barType = $assembly.GetType('CodexQuotaBar.Bar', $true)
-$dayMethod = $barType.GetMethod('AnnouncementDay', [Reflection.BindingFlags]'Static,NonPublic')
-$day = $dayMethod.Invoke($null, @('end of Tuesday'))
-Assert-Equal $day 'Tuesday' 'weekday extraction'
 $bar = [Runtime.Serialization.FormatterServices]::GetUninitializedObject($barType)
 $barType.GetField('chinese', $fieldFlags).SetValue($bar, $false)
 $forecastField = $barType.GetField('forecast', $fieldFlags)
 $labelMethod = $barType.GetMethod('ForecastLabel', [Reflection.BindingFlags]'Instance,NonPublic')
 $expiresField = $forecastType.GetField('ExpiresAt', $fieldFlags)
+$announcementEndsField = $forecastType.GetField('AnnouncementEndsAtUtc', $fieldFlags)
 $expiresField.SetValue($announcementResult, [DateTimeOffset]::UtcNow.AddHours(1))
+$announcementEndsField.SetValue($announcementResult, [DateTimeOffset]::UtcNow.AddMinutes(5))
 $forecastField.SetValue($bar, $announcementResult)
-Assert-Equal ($labelMethod.Invoke($bar, @())) 'Reset promised Tuesday' 'announcement display label'
+Assert-Equal ($labelMethod.Invoke($bar, @())) '100% reset' 'active announcement display label'
+$barType.GetField('chinese', $fieldFlags).SetValue($bar, $true)
+Assert-Equal ($labelMethod.Invoke($bar, @())) '100% reset' 'same compact label in Chinese UI'
+$expiresField.SetValue($probabilityResult, [DateTimeOffset]::UtcNow.AddHours(1))
+$forecastField.SetValue($bar, $probabilityResult)
+Assert-Equal ($labelMethod.Invoke($bar, @())) '20% reset' 'probability-only display label'
 $expiresField.SetValue($bankedResult, [DateTimeOffset]::UtcNow.AddHours(1))
 $forecastField.SetValue($bar, $bankedResult)
-Assert-Equal ($labelMethod.Invoke($bar, @())) 'Banked reset issued' 'banked reset display label'
+Assert-Equal ($labelMethod.Invoke($bar, @())) '20% reset' 'historical banked event does not block probability'
+$expiresField.SetValue($postResetResult, [DateTimeOffset]::UtcNow.AddHours(1))
+$forecastField.SetValue($bar, $postResetResult)
+Assert-Equal ($labelMethod.Invoke($bar, @())) '20% reset' 'completed reset event does not block probability'
+$expiresField.SetValue($expiredResult, [DateTimeOffset]::UtcNow.AddHours(1))
+$forecastField.SetValue($bar, $expiredResult)
+Assert-Equal ($labelMethod.Invoke($bar, @())) '18% reset' 'expired announcement returns to probability'
+$forecastField.SetValue($bar, $null)
+Assert-Equal ($labelMethod.Invoke($bar, @())) '--% reset' 'unavailable data has no fabricated probability'
 
 $newerAnnouncement = '{"updated_at":"2026-09-22T20:35:00Z","probabilities":{"rounded_24h":93},"official_signal":{"url":"https://x.com/thsottiaux/status/new","at":"2026-09-22T20:31:00Z","window":{"label":"end of Tuesday","end_at":"2026-09-23T06:59:59Z","target_kind":"deadline"}}}'
 $newerResult = Parse-Forecast $newerAnnouncement '2026-09-22T20:40:00Z'
 $olderFeed = '{"fetched_at":"2026-09-22T20:36:00Z","stale":false,"events":[{"group":"credits","reset_kind":"banked","announced_at":"2026-09-22T18:23:37Z","url":"https://x.com/thsottiaux/status/old"}]}'
 Apply-Feed $newerResult $olderFeed '2026-09-22T20:40:00Z'
 $expiresField.SetValue($newerResult, [DateTimeOffset]::UtcNow.AddHours(1))
+$announcementEndsField.SetValue($newerResult, [DateTimeOffset]::UtcNow.AddMinutes(5))
 $forecastField.SetValue($bar, $newerResult)
-Assert-Equal ($labelMethod.Invoke($bar, @())) 'Reset promised Tuesday' 'newer announcement takes priority'
+Assert-Equal ($labelMethod.Invoke($bar, @())) '100% reset' 'newer announcement takes priority'
 Assert-Equal (Read-Field $newerResult 'SourceUrl') 'https://x.com/thsottiaux/status/new' 'newer announcement source'
+$announcementEndsField.SetValue($newerResult, [DateTimeOffset]::UtcNow.AddMinutes(-1))
+Assert-Equal ($labelMethod.Invoke($bar, @())) '93% reset' 'announcement window end immediately returns to probability'
 
 if ($Live) {
     $clientType = $assembly.GetType('CodexQuotaBar.TiboForecastClient', $true)

@@ -8,7 +8,7 @@ Show your weekly remaining quota and next reset time beside **Help** in the Wind
 
 **每周额度剩余 11%**　│　重置时间 2026年9月6日 19:29
 
-The third segment prioritizes public reset updates: an explicit promise becomes `Reset promised Tuesday`, a delivered manual reset becomes `Banked reset issued`, and `Auto-reset chance 20%` appears only when no current update exists. The probability is an experimental third-party estimate, not an OpenAI commitment.
+The third segment always uses `N% reset`: an active reset announcement appears as red `100% reset`; otherwise it shows the experimental 24-hour probability, such as `20% reset`. Once the announcement expires or is withdrawn, the probability returns. The `100%` label means an active announcement, not that quota has already reset or that OpenAI guarantees the outcome.
 
 These are formatting examples. Live values come from the currently signed-in Codex account.
 
@@ -20,7 +20,7 @@ These are formatting examples. Live values come from the currently signed-in Cod
 - Multiple Codex windows, with window-event tracking for immediate movement and matching minimize, occlusion and close behavior.
 - One shared quota refresh every 60 seconds. Right-click to refresh manually or exit.
 - Public reset data refreshes asynchronously every 15 minutes. Two read-only requests run in parallel with a 30-second timeout. No account ID, quota, login information or X credentials are sent.
-- Display priority is latest delivery result, then an active explicit announcement, then the experimental 24-hour probability. The tool preserves source windows instead of inventing an exact countdown, and keeps a banked reset separate from a direct usage reset.
+- An active announcement shows red `100% reset`; otherwise the bar shows the source's experimental 24-hour probability. Earlier usage or banked resets no longer hide the probability for three days. Unavailable data appears as `--% reset`.
 - The tooltip includes the source post, data provider, update time, expiry and experimental disclaimer. Right-click opens the data source.
 - A dedicated shortcut starts Codex with the quota bar. Closing the last Codex window closes the tool and its reader process.
 
@@ -34,7 +34,7 @@ This is an independent community project, unaffiliated with OpenAI. It does not 
 
 ## Download and run
 
-1. Download `codex-quota-bar-v1.1.6-windows-x64.zip` from [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest).
+1. Download `codex-quota-bar-v1.1.7-windows-x64.zip` from [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest).
 2. **Extract the entire ZIP** into a folder you intend to keep.
 3. With Codex open, double-click `CodexQuotaBar.exe`.
 
@@ -82,7 +82,7 @@ The tool starts its own installed Codex CLI process with `app-server --stdio` an
 
 It reuses the existing Codex login, does not start model conversations, purchase quota or redeem reset credits, and has no additional telemetry or upload service. It reads `locale` from `CODEX_HOME/computer-use/config.json`, defaulting to the user's `.codex` folder when `CODEX_HOME` is unset. Temporarily unavailable locale data preserves the last language; the initial default is English.
 
-The third segment reads public, read-only JSON from [codex-reset.com](https://codex-reset.com/): `/api/forecast` supplies the experimental 24-hour probability and active explicit signal, while `/api/feed` supplies Tibo source posts and announced usage or banked resets. Newer explicit facts take priority; probability appears only when no announcement or delivery update is current. The service may be delayed, unavailable or changed and is not an OpenAI guarantee. **Open reset data (codex-reset.com)** opens the provider page.
+The third segment reads public, read-only JSON from [codex-reset.com](https://codex-reset.com/): `/api/forecast` supplies the experimental 24-hour probability and active reset announcement, while `/api/feed` supplies Tibo posts and announced usage or banked resets for the tooltip. Only an active announcement replaces the probability; the probability returns when the announcement ends. The service may be delayed, unavailable or changed and is not an OpenAI guarantee. **Open reset data (codex-reset.com)** opens the provider page.
 
 A temporary UI Automation process locates the menu, with a five-second timeout. Failed probes retain the last valid position. A successful probe is rechecked after 30 seconds, a failed one after 10 seconds; new windows, language changes and DPI changes trigger another probe. Movement uses cached positions and WinEvent notifications without waiting for menu reads. Reset-data requests run in a separate asynchronous flow and cannot block movement, menu discovery, quota reads or exit; a transient failure keeps the last result while it remains fresh.
 

@@ -103,6 +103,7 @@ namespace CodexQuotaBar
         internal bool HasAnnouncement;
         internal int? Probability24h;
         internal DateTimeOffset? AnnouncementTimeUtc;
+        internal DateTimeOffset? AnnouncementEndsAtUtc;
         internal DateTimeOffset? AnnouncementAtUtc;
         internal string AnnouncementWindow;
         internal string LatestEventKind;
@@ -114,10 +115,14 @@ namespace CodexQuotaBar
 
         internal bool Usable { get { return UsableAt(DateTimeOffset.UtcNow); } }
 
+        internal bool ActiveAnnouncement { get { return HasAnnouncement
+            && (!AnnouncementEndsAtUtc.HasValue || AnnouncementEndsAtUtc.Value > DateTimeOffset.UtcNow); } }
+
         private bool UsableAt(DateTimeOffset now)
         {
             return IsFresh && (!ExpiresAt.HasValue || ExpiresAt.Value > now)
-                && (LatestEventKind != null || HasAnnouncement || Probability24h.HasValue);
+                && (LatestEventKind != null || (HasAnnouncement
+                    && (!AnnouncementEndsAtUtc.HasValue || AnnouncementEndsAtUtc.Value > now)) || Probability24h.HasValue);
         }
 
         internal static TiboForecast Failure(string error)
@@ -225,6 +230,7 @@ namespace CodexQuotaBar
                 if (!end.HasValue || end.Value > now)
                 {
                     forecast.HasAnnouncement = true;
+                    forecast.AnnouncementEndsAtUtc = end;
                     forecast.AnnouncementWindow = Text(Quota.Get(window, "label"));
                     string targetKind = Text(Quota.Get(window, "target_kind"));
                     if (String.Equals(targetKind, "exact", StringComparison.OrdinalIgnoreCase)
@@ -299,7 +305,7 @@ namespace CodexQuotaBar
         internal TiboForecastClient()
         {
             client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.6 (+https://github.com/Useless-Craft/codex-quota-bar)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.7 (+https://github.com/Useless-Craft/codex-quota-bar)");
         }
 
         private async Task<PayloadResult> ReadPayload(string url)
@@ -410,7 +416,7 @@ namespace CodexQuotaBar
                     process.ErrorDataReceived += delegate { };
                     process.Start();
                     process.BeginErrorReadLine();
-                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.5" } });
+                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.7" } });
                     process.StandardInput.WriteLine("{\"method\":\"initialized\",\"params\":{}}");
                 }
                 return Quota.Parse(await Request("account/rateLimits/read", null));
@@ -818,51 +824,12 @@ namespace CodexQuotaBar
             if (handle != IntPtr.Zero) UpdatePlacement();
         }
 
-        private string ProbabilityLabel()
-        {
-            return chinese ? "自动重置概率 " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
-                : "Auto-reset chance " + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%";
-        }
-
         private string ForecastLabel()
         {
-            if (forecast == null || !forecast.Usable) return chinese ? "暂无重置信息" : "No reset update";
-            bool eventFirst = forecast.LatestEventKind != null && (!forecast.AnnouncementAtUtc.HasValue
-                || !forecast.LatestEventAtUtc.HasValue || forecast.LatestEventAtUtc.Value >= forecast.AnnouncementAtUtc.Value);
-            if (eventFirst && forecast.LatestEventKind == "banked")
-                return chinese ? "可用重置已发放" : "Banked reset issued";
-            if (eventFirst && forecast.LatestEventKind == "reset")
-                return chinese ? "额度重置已完成" : "Usage reset completed";
-            if (forecast.HasAnnouncement)
-            {
-                if (forecast.AnnouncementTimeUtc.HasValue)
-                {
-                    DateTime local = forecast.AnnouncementTimeUtc.Value.ToLocalTime().DateTime;
-                    return chinese ? "重置预告 " + local.ToString("M月d日 HH:mm", CultureInfo.GetCultureInfo("zh-CN"))
-                        : "Reset notice " + local.ToString("MMM d, HH:mm", CultureInfo.GetCultureInfo("en-US"));
-                }
-                string day = AnnouncementDay(forecast.AnnouncementWindow);
-                if (!String.IsNullOrWhiteSpace(day))
-                    return chinese ? "重置预告：" + ChineseDay(day) : "Reset promised " + day;
-                return chinese ? "重置预告：时间未定" : "Reset notice · time unknown";
-            }
-            return forecast.Probability24h.HasValue ? ProbabilityLabel() : (chinese ? "暂无重置信息" : "No reset update");
-        }
-
-        private static string AnnouncementDay(string value)
-        {
-            if (String.IsNullOrWhiteSpace(value)) return null;
-            foreach (string day in new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" })
-                if (value.IndexOf(day, StringComparison.OrdinalIgnoreCase) >= 0) return day;
-            return null;
-        }
-
-        private static string ChineseDay(string day)
-        {
-            string[] english = { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
-            string[] translated = { "周一", "周二", "周三", "周四", "周五", "周六", "周日" };
-            int index = Array.IndexOf(english, day);
-            return index >= 0 ? translated[index] : day;
+            if (forecast == null || !forecast.Usable) return "--% reset";
+            if (forecast.ActiveAnnouncement) return "100% reset";
+            return forecast.Probability24h.HasValue
+                ? forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "% reset" : "--% reset";
         }
 
         private string ForecastTimestamp(DateTimeOffset? value)
@@ -876,8 +843,9 @@ namespace CodexQuotaBar
         {
             if (forecast == null)
                 return chinese ? "正在读取重置信息" : "Loading reset data";
-            string status = forecast.Usable ? ForecastLabel() : (chinese ? "暂无重置信息" : "No reset update");
-            string source = String.IsNullOrWhiteSpace(forecast.SourceUrl) ? TiboForecast.ForecastUrl : forecast.SourceUrl;
+            string status = ForecastLabel();
+            string source = forecast.ActiveAnnouncement && !String.IsNullOrWhiteSpace(forecast.SourceUrl)
+                ? forecast.SourceUrl : TiboForecast.ForecastUrl;
             string details = chinese
                 ? "重置信息 · 数据来源 codex-reset.com\n来源链接：" + source + "\n状态：" + status + "\n更新时间：" + ForecastTimestamp(forecast.AsOf)
                     + "\n有效期至：" + ForecastTimestamp(forecast.ExpiresAt)
@@ -888,11 +856,14 @@ namespace CodexQuotaBar
                     : "\nModel chance (24h): " + forecast.Probability24h.Value + "% (announcement takes priority)";
             if (forecast.LatestEventAtUtc.HasValue)
                 details += chinese ? "\n公布时间：" + ForecastTimestamp(forecast.LatestEventAtUtc)
-                    + (forecast.LatestEventKind == "banked" ? "\n说明：Plus、Pro 和 Business 账户获赠一次可手动使用的重置。" : "")
+                    + (forecast.LatestEventKind == "banked" ? "\n说明：来源称正在为 Plus、Pro 和 Business 账户添加可手动使用的重置；到账以账户状态为准。" : "")
                     : "\nAnnounced: " + ForecastTimestamp(forecast.LatestEventAtUtc)
-                    + (forecast.LatestEventKind == "banked" ? "\nNote: Plus, Pro, and Business accounts received one reset to use manually." : "");
+                    + (forecast.LatestEventKind == "banked" ? "\nNote: The source says a manual reset is being added to Plus, Pro, and Business accounts; check your account for delivery." : "");
+            if (forecast.LatestEventAtUtc.HasValue && !forecast.ActiveAnnouncement
+                && !String.IsNullOrWhiteSpace(forecast.SourceUrl) && forecast.SourceUrl != TiboForecast.ForecastUrl)
+                details += chinese ? "\n相关动态：" + forecast.SourceUrl : "\nRelated post: " + forecast.SourceUrl;
             if (!String.IsNullOrWhiteSpace(forecast.Error)) details += chinese ? "\n读取失败：" + forecast.Error : "\nRead error: " + forecast.Error;
-            return details + (chinese ? "\n概率为实验性预测；公告与发放信息以原帖为准。" : "\nProbability is experimental; announcements and delivery follow the source post.");
+            return details + (chinese ? "\n100% 表示存在有效重置预告，并非到账确认；其他百分比为实验性预测。" : "\n100% means an active reset announcement, not a confirmed reset; other percentages are experimental predictions.");
         }
 
         private void UpdateText()
@@ -916,7 +887,10 @@ namespace CodexQuotaBar
             surface.BorderBrush = new SolidColorBrush(lightTheme ? Color.FromRgb(206, 218, 209) : Color.FromRgb(67, 83, 73));
             label.Foreground = new SolidColorBrush(lightTheme ? Color.FromRgb(92, 111, 98) : Color.FromRgb(174, 189, 180));
             var ink = new SolidColorBrush(lightTheme ? Color.FromRgb(38, 56, 45) : Color.FromRgb(227, 237, 230));
-            var forecastInk = new SolidColorBrush(lightTheme ? Color.FromRgb(47, 85, 112) : Color.FromRgb(157, 201, 226));
+            bool resetAnnounced = forecast != null && forecast.Usable && forecast.ActiveAnnouncement;
+            var forecastInk = new SolidColorBrush(resetAnnounced
+                ? (lightTheme ? Color.FromRgb(180, 35, 24) : Color.FromRgb(250, 132, 132))
+                : (lightTheme ? Color.FromRgb(47, 85, 112) : Color.FromRgb(157, 201, 226)));
             label.Inlines.Clear();
             label.Inlines.Add(new Run(weeklyLabel) { FontSize = 13, FontWeight = FontWeights.SemiBold });
             var value = new Run(amount) { FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = ink };

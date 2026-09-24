@@ -8,7 +8,7 @@
 
 **Weekly usage limit 11% left**　│　Resets Sep 6, 2026, 19:29
 
-右侧第三段优先显示公开重置动态：明确预告显示 `重置预告：周二`，落地为可手动使用的重置额度后显示 `可用重置已发放`；没有动态时才显示 `自动重置概率 20%`。概率是第三方实验性估计，不是 OpenAI 承诺。
+右侧第三段统一显示为 `N% reset`：有效重置预告显示红色 `100% reset`；没有有效预告时显示 24 小时实验性概率，例如 `20% reset`。预告结束或来源撤销后恢复概率，已发生的重置动态不再占据顶部。`100%` 表示来源存在有效预告，不代表额度已经到账，也不是 OpenAI 对重置结果的保证。
 
 以上是格式示例。实际数值来自当前登录的 Codex 账户。
 
@@ -20,7 +20,7 @@
 - 支持多个 Codex 窗口，监听窗口移动事件以即时跟随；随窗口最小化、遮挡和关闭。
 - 每 60 秒共享刷新一次额度；右键可手动刷新或退出。
 - 每 15 分钟异步刷新公开重置动态，两个只读请求并行执行，最长等待 30 秒；不发送账户 ID、额度、登录信息或 X 凭据。
-- 显示优先级为“最新发放结果 → 当前明确预告 → 24 小时实验性概率”。预告只按来源给出的时间窗口显示，不把模糊文字伪造成精确倒计时；可手动使用的 banked reset 与直接清零的 usage reset 分开处理。
+- 有效预告显示红色 `100% reset`，否则显示来源给出的 24 小时概率；已发生的重置或 banked reset 不会把概率遮住三天。无可用数据时显示 `--% reset`。
 - 悬停提示包含原帖、数据来源、更新时间、有效期和实验性说明；右键可打开数据来源页面。
 - 专用快捷方式同时启动 Codex 和额度条；最后一个 Codex 窗口关闭后，工具及其读取进程退出。
 
@@ -34,7 +34,7 @@
 
 ## 下载与使用
 
-1. 从 [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest) 下载 `codex-quota-bar-v1.1.6-windows-x64.zip`。
+1. 从 [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest) 下载 `codex-quota-bar-v1.1.7-windows-x64.zip`。
 2. **完整解压**到一个准备长期保留的目录。
 3. Codex 已打开时，双击 `CodexQuotaBar.exe` 即可显示额度。
 
@@ -80,7 +80,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 
 工具通过已安装的 Codex CLI 启动自有 `app-server --stdio` 子进程，调用 `account/rateLimits/read`。仅显示 `codex` 额度桶中长度为 10080 分钟的周额度；缺失数据不会当作 0%，到达重置时间后等待服务返回新数据。
 
-第三段读取 [codex-reset.com](https://codex-reset.com/) 的公开只读 JSON：`/api/forecast` 提供 24 小时实验性概率和当前明确预告，`/api/feed` 提供 Tibo 原帖及已公布的 usage reset / banked reset。工具会优先显示较新的明确事实；只有没有预告或发放动态时才显示概率。接口可能延迟、不可用或改变，且不代表 OpenAI 的服务承诺。右键菜单中的 **打开重置信息（codex-reset.com）** 会打开数据来源页面。
+第三段读取 [codex-reset.com](https://codex-reset.com/) 的公开只读 JSON：`/api/forecast` 提供 24 小时实验性概率和当前有效预告，`/api/feed` 提供 Tibo 原帖及已公布的 usage reset / banked reset，供悬停提示查看。仅有效预告覆盖概率，预告结束后恢复概率。接口可能延迟、不可用或改变，且不代表 OpenAI 的服务承诺。右键菜单中的 **打开重置信息（codex-reset.com）** 会打开数据来源页面。
 
 工具复用 Codex 现有登录，不发起模型对话、购买额度或使用重置券，也没有额外的遥测或上传服务。语言只读 `CODEX_HOME/computer-use/config.json` 中的 `locale`，未设置 `CODEX_HOME` 时使用当前用户的 `.codex` 目录。暂时无法读取时保留上次语言，初始默认为英文。
 
