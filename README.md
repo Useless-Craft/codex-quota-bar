@@ -8,7 +8,7 @@
 
 **Weekly usage limit 11% left**　│　Resets Sep 6, 2026, 19:29
 
-有可用的公开信号时，右侧还会显示 Tibo 自动重置概率或独立的额度信号。例如 `自动重置概率 15%` 表示接口发现了额度（credit）信号，并同时给出自动重置的实验性概率；具体的信号分类、时间是否明确、来源和有效期可悬停查看。单独的 `自动重置概率 16%` 只表示自动重置的实验性概率。这部分来自第三方 NextReset，不是 OpenAI 承诺。
+右侧第三段优先显示公开重置动态：明确预告显示 `重置预告：周二`，落地为可手动使用的重置额度后显示 `可用重置已发放`；没有动态时才显示 `自动重置概率 20%`。概率是第三方实验性估计，不是 OpenAI 承诺。
 
 以上是格式示例。实际数值来自当前登录的 Codex 账户。
 
@@ -19,9 +19,9 @@
 - 跟随 Codex 界面语言：中文使用中文，其余语言使用英文；时间按本机时区、24 小时制显示。
 - 支持多个 Codex 窗口，监听窗口移动事件以即时跟随；随窗口最小化、遮挡和关闭。
 - 每 60 秒共享刷新一次额度；右键可手动刷新或退出。
-- 每 15 分钟异步刷新 NextReset 公开预测，单次请求最多等待 8 秒；不发送账户 ID、额度、登录信息或 X 凭据。
-- 将接口标记为 `credit` 的 Tibo 信号与自动重置分开显示；额度信号没有明确时间时顶部只显示“自动重置概率”，有明确时间时显示“重置预告”，悬停提示会标明时间未提供，不会把它冒充成已确认的自动重置。严格只接受来源提供的未来绝对时间；“今晚”“明天”等模糊文字不会自行推算倒计时。预测过期或读取失败显示 `暂无重置信息`。
-- 悬停提示包含来源、更新时间、有效期和实验性说明；右键可打开 Tibo 预测页面。
+- 每 15 分钟异步刷新公开重置动态，两个只读请求并行执行，最长等待 30 秒；不发送账户 ID、额度、登录信息或 X 凭据。
+- 显示优先级为“最新发放结果 → 当前明确预告 → 24 小时实验性概率”。预告只按来源给出的时间窗口显示，不把模糊文字伪造成精确倒计时；可手动使用的 banked reset 与直接清零的 usage reset 分开处理。
+- 悬停提示包含原帖、数据来源、更新时间、有效期和实验性说明；右键可打开数据来源页面。
 - 专用快捷方式同时启动 Codex 和额度条；最后一个 Codex 窗口关闭后，工具及其读取进程退出。
 
 ## 运行要求
@@ -34,7 +34,7 @@
 
 ## 下载与使用
 
-1. 从 [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest) 下载 `codex-quota-bar-v1.1.5-windows-x64.zip`。
+1. 从 [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest) 下载 `codex-quota-bar-v1.1.6-windows-x64.zip`。
 2. **完整解压**到一个准备长期保留的目录。
 3. Codex 已打开时，双击 `CodexQuotaBar.exe` 即可显示额度。
 
@@ -74,16 +74,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 | `quota.manifest` | 普通用户权限与 DPI 声明 |
 | `build.ps1` | x64 编译 |
 | `create-shortcut.ps1` | 创建联动启动快捷方式 |
+| `tests/test-forecast.ps1` | 重置动态解析测试 |
 
 ## 工作方式与数据
 
 工具通过已安装的 Codex CLI 启动自有 `app-server --stdio` 子进程，调用 `account/rateLimits/read`。仅显示 `codex` 额度桶中长度为 10080 分钟的周额度；缺失数据不会当作 0%，到达重置时间后等待服务返回新数据。
 
-Tibo 状态读取 `https://nextreset.ai/api/forecast`。自动重置概率、Tibo 的 `credit` 额度信号和自动重置预告分开处理；额度信号不会自动提高自动重置概率。工具只使用公开 HTTPS 数据中的 `asOf`、`expiresAt`、24 小时概率和明确的未来绝对时间字段。NextReset 的预测由公开信号估计重置可能性，可能延迟、降级或改变；它不代表 OpenAI 的服务承诺。右键菜单中的 **打开 Tibo 预测** 会打开 [NextReset forecast](https://nextreset.ai/forecast/) 页面。
+第三段读取 [codex-reset.com](https://codex-reset.com/) 的公开只读 JSON：`/api/forecast` 提供 24 小时实验性概率和当前明确预告，`/api/feed` 提供 Tibo 原帖及已公布的 usage reset / banked reset。工具会优先显示较新的明确事实；只有没有预告或发放动态时才显示概率。接口可能延迟、不可用或改变，且不代表 OpenAI 的服务承诺。右键菜单中的 **打开重置信息（codex-reset.com）** 会打开数据来源页面。
 
 工具复用 Codex 现有登录，不发起模型对话、购买额度或使用重置券，也没有额外的遥测或上传服务。语言只读 `CODEX_HOME/computer-use/config.json` 中的 `locale`，未设置 `CODEX_HOME` 时使用当前用户的 `.codex` 目录。暂时无法读取时保留上次语言，初始默认为英文。
 
-菜单位置由临时 UI Automation 子进程读取，5 秒超时后终止，保留上次有效位置。正常每 30 秒复核，失败后每 10 秒重试；新窗口、语言或 DPI 变化会触发重新定位。窗口移动使用缓存位置与 WinEvent，不等待菜单读取完成。Tibo 网络请求在独立异步流程中执行，不阻塞移动、菜单定位、额度读取或退出。
+菜单位置由临时 UI Automation 子进程读取，5 秒超时后终止，保留上次有效位置。正常每 30 秒复核，失败后每 10 秒重试；新窗口、语言或 DPI 变化会触发重新定位。窗口移动使用缓存位置与 WinEvent，不等待菜单读取完成。重置动态请求在独立异步流程中执行，不阻塞移动、菜单定位、额度读取或退出；短暂失败时保留仍在有效期内的上次结果。
 
 ## 常见问题与排查
 

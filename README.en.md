@@ -8,7 +8,7 @@ Show your weekly remaining quota and next reset time beside **Help** in the Wind
 
 **每周额度剩余 11%**　│　重置时间 2026年9月6日 19:29
 
-When a public signal is available, the third segment keeps the automatic-reset probability separate from a credit signal. For example, `Auto-reset chance 15%` means the API found a credit signal and also reports the experimental automatic-reset probability; hover to see the classification, whether a time was provided, the source and expiry. `Auto-reset chance 16%` by itself is only the experimental automatic-reset probability. These values come from NextReset, not an OpenAI commitment.
+The third segment prioritizes public reset updates: an explicit promise becomes `Reset promised Tuesday`, a delivered manual reset becomes `Banked reset issued`, and `Auto-reset chance 20%` appears only when no current update exists. The probability is an experimental third-party estimate, not an OpenAI commitment.
 
 These are formatting examples. Live values come from the currently signed-in Codex account.
 
@@ -19,9 +19,9 @@ These are formatting examples. Live values come from the currently signed-in Cod
 - Follows the Codex UI language: Chinese for Chinese locales, English otherwise. Dates use local time and a 24-hour clock.
 - Multiple Codex windows, with window-event tracking for immediate movement and matching minimize, occlusion and close behavior.
 - One shared quota refresh every 60 seconds. Right-click to refresh manually or exit.
-- NextReset is refreshed asynchronously every 15 minutes, with an 8-second request timeout. No account ID, quota, login information or X credentials are sent.
-- credit signals marked `credit` by the API stay separate from automatic resets. A credit signal without a clear time becomes `credit signal`; the tooltip says when the signal time was not provided, and it is not presented as a confirmed automatic reset. Only a future absolute timestamp supplied by the source is used. Vague text such as “tonight” or “tomorrow” never becomes a made-up countdown. Expired or failed data shows `No reset update`.
-- The tooltip includes the source, update time, expiry time and experimental disclaimer. Right-click opens the Tibo forecast page.
+- Public reset data refreshes asynchronously every 15 minutes. Two read-only requests run in parallel with a 30-second timeout. No account ID, quota, login information or X credentials are sent.
+- Display priority is latest delivery result, then an active explicit announcement, then the experimental 24-hour probability. The tool preserves source windows instead of inventing an exact countdown, and keeps a banked reset separate from a direct usage reset.
+- The tooltip includes the source post, data provider, update time, expiry and experimental disclaimer. Right-click opens the data source.
 - A dedicated shortcut starts Codex with the quota bar. Closing the last Codex window closes the tool and its reader process.
 
 ## Requirements
@@ -34,7 +34,7 @@ This is an independent community project, unaffiliated with OpenAI. It does not 
 
 ## Download and run
 
-1. Download `codex-quota-bar-v1.1.5-windows-x64.zip` from [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest).
+1. Download `codex-quota-bar-v1.1.6-windows-x64.zip` from [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest).
 2. **Extract the entire ZIP** into a folder you intend to keep.
 3. With Codex open, double-click `CodexQuotaBar.exe`.
 
@@ -74,6 +74,7 @@ The output is `CodexQuotaBar.exe` in the repository root. Exit the quota tool ru
 | `quota.manifest` | User-level privileges and DPI settings |
 | `build.ps1` | x64 build |
 | `create-shortcut.ps1` | Linked-startup shortcut creation |
+| `tests/test-forecast.ps1` | Reset-data parser checks |
 
 ## How it works and data handling
 
@@ -81,9 +82,9 @@ The tool starts its own installed Codex CLI process with `app-server --stdio` an
 
 It reuses the existing Codex login, does not start model conversations, purchase quota or redeem reset credits, and has no additional telemetry or upload service. It reads `locale` from `CODEX_HOME/computer-use/config.json`, defaulting to the user's `.codex` folder when `CODEX_HOME` is unset. Temporarily unavailable locale data preserves the last language; the initial default is English.
 
-The Tibo segment reads the public JSON endpoint at `https://nextreset.ai/api/forecast`. It keeps the automatic-reset probability, API `credit` signals and automatic-reset announcements separate; a credit signal does not increase the automatic-reset probability. It uses `asOf`, `expiresAt`, the 24-hour probability and an explicit future timestamp only when the source supplies one. Relative wording is never converted into a made-up time. NextReset is an experimental public estimate that can be delayed, degraded or changed; it is not an OpenAI service guarantee. The context-menu command **Open Tibo forecast** opens [NextReset forecast](https://nextreset.ai/forecast/).
+The third segment reads public, read-only JSON from [codex-reset.com](https://codex-reset.com/): `/api/forecast` supplies the experimental 24-hour probability and active explicit signal, while `/api/feed` supplies Tibo source posts and announced usage or banked resets. Newer explicit facts take priority; probability appears only when no announcement or delivery update is current. The service may be delayed, unavailable or changed and is not an OpenAI guarantee. **Open reset data (codex-reset.com)** opens the provider page.
 
-A temporary UI Automation process locates the menu, with a five-second timeout. Failed probes retain the last valid position. A successful probe is rechecked after 30 seconds, a failed one after 10 seconds; new windows, language changes and DPI changes trigger another probe. Movement uses cached positions and WinEvent notifications without waiting for menu reads. The Tibo request runs in a separate asynchronous flow and cannot block movement, menu discovery, quota reads or exit.
+A temporary UI Automation process locates the menu, with a five-second timeout. Failed probes retain the last valid position. A successful probe is rechecked after 30 seconds, a failed one after 10 seconds; new windows, language changes and DPI changes trigger another probe. Movement uses cached positions and WinEvent notifications without waiting for menu reads. Reset-data requests run in a separate asynchronous flow and cannot block movement, menu discovery, quota reads or exit; a transient failure keeps the last result while it remains fresh.
 
 ## Troubleshooting
 
