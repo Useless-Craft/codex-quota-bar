@@ -305,7 +305,7 @@ namespace CodexQuotaBar
         internal TiboForecastClient()
         {
             client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.7 (+https://github.com/Useless-Craft/codex-quota-bar)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.8 (+https://github.com/Useless-Craft/codex-quota-bar)");
         }
 
         private async Task<PayloadResult> ReadPayload(string url)
@@ -416,7 +416,7 @@ namespace CodexQuotaBar
                     process.ErrorDataReceived += delegate { };
                     process.Start();
                     process.BeginErrorReadLine();
-                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.7" } });
+                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.8" } });
                     process.StandardInput.WriteLine("{\"method\":\"initialized\",\"params\":{}}");
                 }
                 return Quota.Parse(await Request("account/rateLimits/read", null));
@@ -832,38 +832,13 @@ namespace CodexQuotaBar
                 ? forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "% reset" : "--% reset";
         }
 
-        private string ForecastTimestamp(DateTimeOffset? value)
-        {
-            if (!value.HasValue) return chinese ? "未提供" : "N/A";
-            return value.Value.ToLocalTime().ToString(chinese ? "yyyy年M月d日 HH:mm" : "MMM d, yyyy, HH:mm",
-                CultureInfo.GetCultureInfo(chinese ? "zh-CN" : "en-US"));
-        }
-
         private string ForecastTooltip()
         {
-            if (forecast == null)
-                return chinese ? "正在读取重置信息" : "Loading reset data";
-            string status = ForecastLabel();
-            string source = forecast.ActiveAnnouncement && !String.IsNullOrWhiteSpace(forecast.SourceUrl)
-                ? forecast.SourceUrl : TiboForecast.ForecastUrl;
-            string details = chinese
-                ? "重置信息 · 数据来源 codex-reset.com\n来源链接：" + source + "\n状态：" + status + "\n更新时间：" + ForecastTimestamp(forecast.AsOf)
-                    + "\n有效期至：" + ForecastTimestamp(forecast.ExpiresAt)
-                : "Reset data · Source: codex-reset.com\nSource link: " + source + "\nStatus: " + status + "\nUpdated: " + ForecastTimestamp(forecast.AsOf)
-                    + "\nValid until: " + ForecastTimestamp(forecast.ExpiresAt);
-            if (forecast.Probability24h.HasValue)
-                details += chinese ? "\n模型概率（24小时）：" + forecast.Probability24h.Value + "%（明确预告优先）"
-                    : "\nModel chance (24h): " + forecast.Probability24h.Value + "% (announcement takes priority)";
-            if (forecast.LatestEventAtUtc.HasValue)
-                details += chinese ? "\n公布时间：" + ForecastTimestamp(forecast.LatestEventAtUtc)
-                    + (forecast.LatestEventKind == "banked" ? "\n说明：来源称正在为 Plus、Pro 和 Business 账户添加可手动使用的重置；到账以账户状态为准。" : "")
-                    : "\nAnnounced: " + ForecastTimestamp(forecast.LatestEventAtUtc)
-                    + (forecast.LatestEventKind == "banked" ? "\nNote: The source says a manual reset is being added to Plus, Pro, and Business accounts; check your account for delivery." : "");
-            if (forecast.LatestEventAtUtc.HasValue && !forecast.ActiveAnnouncement
-                && !String.IsNullOrWhiteSpace(forecast.SourceUrl) && forecast.SourceUrl != TiboForecast.ForecastUrl)
-                details += chinese ? "\n相关动态：" + forecast.SourceUrl : "\nRelated post: " + forecast.SourceUrl;
-            if (!String.IsNullOrWhiteSpace(forecast.Error)) details += chinese ? "\n读取失败：" + forecast.Error : "\nRead error: " + forecast.Error;
-            return details + (chinese ? "\n100% 表示存在有效重置预告，并非到账确认；其他百分比为实验性预测。" : "\n100% means an active reset announcement, not a confirmed reset; other percentages are experimental predictions.");
+            if (forecast == null || !forecast.Usable)
+                return chinese ? "--% reset · 数据暂不可用" : "--% reset · Data unavailable";
+            if (forecast.ActiveAnnouncement)
+                return chinese ? "100% reset · 有重置预告，尚未确认到账" : "100% reset · Announced, not yet confirmed";
+            return ForecastLabel() + (chinese ? " · 未来24小时实验性预测" : " · Experimental 24h forecast");
         }
 
         private void UpdateText()
@@ -913,10 +888,8 @@ namespace CodexQuotaBar
             ((MenuItem)menu.Items[0]).Header = chinese ? "刷新额度" : "Refresh quota";
             ((MenuItem)menu.Items[1]).Header = chinese ? "打开重置信息（codex-reset.com）" : "Open reset data (codex-reset.com)";
             ((MenuItem)menu.Items[2]).Header = chinese ? "退出额度显示" : "Exit quota display";
-            string quotaTooltip = chinese
-                ? (error == null ? "Codex 账户周额度 · 每 60 秒刷新 · 右键退出" : "额度读取失败：" + error)
-                : (error == null ? "Codex weekly quota · Refreshes every 60s · Right-click for options" : "Unable to refresh quota. Retrying every 60s. Right-click for options.");
-            label.ToolTip = quotaTooltip + "\n\n" + ForecastTooltip();
+            // The inline status needs no popup; keep a short hint only when space hides it.
+            label.ToolTip = forecast != null && !showForecast ? ForecastTooltip() : null;
             Title = "Codex Quota Bar — " + display;
             AutomationProperties.SetName(label, display);
         }
@@ -948,7 +921,7 @@ namespace CodexQuotaBar
             if (!enough && forecastInline && forecast != null)
             {
                 // Keep the original two quota fields visible when the third segment would
-                // crowd the menu. Its full status remains available in the hover tooltip.
+                // crowd the menu. Its short status remains available in the hover tooltip.
                 expandedWidth = width;
                 forecastInline = false;
                 display = null;
