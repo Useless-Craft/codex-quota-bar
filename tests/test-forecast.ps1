@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$ExePath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'CodexQuotaBar.exe'),
     [switch]$Live
 )
@@ -26,6 +26,10 @@ function Read-Field($Value, [string]$Name) {
 
 function Assert-Equal($Actual, $Expected, [string]$Name) {
     if ($Actual -ne $Expected) { throw "$Name expected '$Expected', got '$Actual'." }
+}
+
+function Assert-Contains([string]$Actual, [string]$Expected, [string]$Name) {
+    if (-not $Actual.Contains($Expected)) { throw "$Name expected '$Expected' in '$Actual'." }
 }
 
 $announcement = @'
@@ -79,6 +83,7 @@ $bar = [Runtime.Serialization.FormatterServices]::GetUninitializedObject($barTyp
 $barType.GetField('chinese', $fieldFlags).SetValue($bar, $false)
 $forecastField = $barType.GetField('forecast', $fieldFlags)
 $labelMethod = $barType.GetMethod('ForecastLabel', [Reflection.BindingFlags]'Instance,NonPublic')
+$tooltipMethod = $barType.GetMethod('ForecastTooltip', [Reflection.BindingFlags]'Instance,NonPublic')
 $expiresField = $forecastType.GetField('ExpiresAt', $fieldFlags)
 $announcementEndsField = $forecastType.GetField('AnnouncementEndsAtUtc', $fieldFlags)
 $expiresField.SetValue($announcementResult, [DateTimeOffset]::UtcNow.AddHours(1))
@@ -87,15 +92,24 @@ $forecastField.SetValue($bar, $announcementResult)
 Assert-Equal ($labelMethod.Invoke($bar, @())) '100% reset' 'active announcement display label'
 $barType.GetField('chinese', $fieldFlags).SetValue($bar, $true)
 Assert-Equal ($labelMethod.Invoke($bar, @())) '100% reset' 'same compact label in Chinese UI'
+Assert-Contains ($tooltipMethod.Invoke($bar, @())) '预告窗口截至：' 'announcement window tooltip'
+Assert-Contains ($tooltipMethod.Invoke($bar, @())) '具体时刻未定' 'deadline is not shown as exact time'
 $expiresField.SetValue($probabilityResult, [DateTimeOffset]::UtcNow.AddHours(1))
 $forecastField.SetValue($bar, $probabilityResult)
 Assert-Equal ($labelMethod.Invoke($bar, @())) '20% reset' 'probability-only display label'
+Assert-Contains ($tooltipMethod.Invoke($bar, @())) '未来24小时自动重置概率：20%' 'probability tooltip'
 $expiresField.SetValue($bankedResult, [DateTimeOffset]::UtcNow.AddHours(1))
 $forecastField.SetValue($bar, $bankedResult)
 Assert-Equal ($labelMethod.Invoke($bar, @())) '20% reset' 'historical banked event does not block probability'
+Assert-Contains ($tooltipMethod.Invoke($bar, @())) 'banked reset' 'banked reset identified in tooltip'
+Assert-Contains ($tooltipMethod.Invoke($bar, @())) '可手动使用' 'banked reset meaning in tooltip'
+$barType.GetField('chinese', $fieldFlags).SetValue($bar, $false)
+Assert-Contains ($tooltipMethod.Invoke($bar, @())) 'manual use if credited' 'English banked reset tooltip'
+$barType.GetField('chinese', $fieldFlags).SetValue($bar, $true)
 $expiresField.SetValue($postResetResult, [DateTimeOffset]::UtcNow.AddHours(1))
 $forecastField.SetValue($bar, $postResetResult)
 Assert-Equal ($labelMethod.Invoke($bar, @())) '20% reset' 'completed reset event does not block probability'
+Assert-Contains ($tooltipMethod.Invoke($bar, @())) '直接重置' 'direct reset distinguished from banked reset'
 $expiresField.SetValue($expiredResult, [DateTimeOffset]::UtcNow.AddHours(1))
 $forecastField.SetValue($bar, $expiredResult)
 Assert-Equal ($labelMethod.Invoke($bar, @())) '18% reset' 'expired announcement returns to probability'
@@ -113,6 +127,13 @@ Assert-Equal ($labelMethod.Invoke($bar, @())) '100% reset' 'newer announcement t
 Assert-Equal (Read-Field $newerResult 'SourceUrl') 'https://x.com/thsottiaux/status/new' 'newer announcement source'
 $announcementEndsField.SetValue($newerResult, [DateTimeOffset]::UtcNow.AddMinutes(-1))
 Assert-Equal ($labelMethod.Invoke($bar, @())) '93% reset' 'announcement window end immediately returns to probability'
+
+$exactSignal = '{"updated_at":"2026-09-22T07:25:19Z","probabilities":{"rounded_24h":20},"official_signal":{"at":"2026-09-22T04:31:32Z","window":{"end_at":"2026-09-23T06:59:59Z","target_kind":"exact","target_at":"2026-09-22T21:00:00Z"}}}'
+$exactResult = Parse-Forecast $exactSignal '2026-09-22T07:30:00Z'
+$expiresField.SetValue($exactResult, [DateTimeOffset]::UtcNow.AddHours(1))
+$announcementEndsField.SetValue($exactResult, [DateTimeOffset]::UtcNow.AddMinutes(5))
+$forecastField.SetValue($bar, $exactResult)
+Assert-Contains ($tooltipMethod.Invoke($bar, @())) '预告重置时间：' 'exact announcement time tooltip'
 
 if ($Live) {
     $clientType = $assembly.GetType('CodexQuotaBar.TiboForecastClient', $true)

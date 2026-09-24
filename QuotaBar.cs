@@ -305,7 +305,7 @@ namespace CodexQuotaBar
         internal TiboForecastClient()
         {
             client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.8 (+https://github.com/Useless-Craft/codex-quota-bar)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.9 (+https://github.com/Useless-Craft/codex-quota-bar)");
         }
 
         private async Task<PayloadResult> ReadPayload(string url)
@@ -416,7 +416,7 @@ namespace CodexQuotaBar
                     process.ErrorDataReceived += delegate { };
                     process.Start();
                     process.BeginErrorReadLine();
-                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.8" } });
+                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.9" } });
                     process.StandardInput.WriteLine("{\"method\":\"initialized\",\"params\":{}}");
                 }
                 return Quota.Parse(await Request("account/rateLimits/read", null));
@@ -835,10 +835,40 @@ namespace CodexQuotaBar
         private string ForecastTooltip()
         {
             if (forecast == null || !forecast.Usable)
-                return chinese ? "--% reset · 数据暂不可用" : "--% reset · Data unavailable";
+                return chinese ? "重置预测暂不可用" : "Reset forecast unavailable";
+            var lines = new List<string>();
             if (forecast.ActiveAnnouncement)
-                return chinese ? "100% reset · 有重置预告，尚未确认到账" : "100% reset · Announced, not yet confirmed";
-            return ForecastLabel() + (chinese ? " · 未来24小时实验性预测" : " · Experimental 24h forecast");
+            {
+                if (forecast.AnnouncementTimeUtc.HasValue)
+                    lines.Add((chinese ? "预告重置时间：" : "Announced reset time: ") + BriefTime(forecast.AnnouncementTimeUtc.Value));
+                else if (forecast.AnnouncementEndsAtUtc.HasValue)
+                    lines.Add((chinese ? "预告窗口截至：" : "Announcement window ends: ") + BriefTime(forecast.AnnouncementEndsAtUtc.Value)
+                        + (chinese ? "；具体时刻未定" : "; exact time unknown"));
+                else
+                    lines.Add(chinese ? "已有重置预告，具体时间未定" : "Reset announced; time unknown");
+                lines.Add(chinese ? "100% 仅表示有预告，尚未确认额度重置" : "100% marks an announcement, not a confirmed quota reset");
+            }
+            else if (forecast.Probability24h.HasValue)
+                lines.Add((chinese ? "未来24小时自动重置概率：" : "24h auto-reset chance: ")
+                    + forecast.Probability24h.Value.ToString(CultureInfo.InvariantCulture) + "%"
+                    + (chinese ? "（实验性预测）" : " (experimental)"));
+            if (forecast.LatestEventAtUtc.HasValue)
+            {
+                string when = BriefTime(forecast.LatestEventAtUtc.Value);
+                if (forecast.LatestEventKind == "banked")
+                    lines.Add(chinese ? "最近动态：banked reset，" + when + " 宣布发放；可手动使用，到账以账户为准"
+                        : "Latest: banked reset announced " + when + "; manual use if credited");
+                else if (forecast.LatestEventKind == "reset")
+                    lines.Add(chinese ? "最近动态：直接重置，" + when + " 已公告；到账以账户为准"
+                        : "Latest: direct reset announced " + when + "; check your account");
+            }
+            return String.Join("\n", lines);
+        }
+
+        private string BriefTime(DateTimeOffset value)
+        {
+            return value.ToLocalTime().ToString(chinese ? "M月d日 HH:mm" : "MMM d, HH:mm",
+                CultureInfo.GetCultureInfo(chinese ? "zh-CN" : "en-US"));
         }
 
         private void UpdateText()
@@ -854,8 +884,7 @@ namespace CodexQuotaBar
             string weeklyLabel = chinese ? "每周额度剩余 " : "Weekly usage limit ", resetLabel = chinese ? "重置时间 " : "Resets ";
             bool showForecast = forecast != null && forecastInline;
             string forecastLabel = showForecast ? ForecastLabel() : null;
-            string next = weeklyLabel + amount + remainingSuffix + "  |  " + resetLabel + resetTime
-                + (showForecast ? "  |  " + forecastLabel : "");
+            string next = weeklyLabel + amount + remainingSuffix + (showForecast ? "  |  " + forecastLabel : "");
             if (next == display) return;
             display = next;
             surface.Background = new SolidColorBrush(lightTheme ? Color.FromRgb(238, 243, 239) : Color.FromRgb(42, 53, 46));
@@ -867,7 +896,9 @@ namespace CodexQuotaBar
                 ? (lightTheme ? Color.FromRgb(180, 35, 24) : Color.FromRgb(250, 132, 132))
                 : (lightTheme ? Color.FromRgb(47, 85, 112) : Color.FromRgb(157, 201, 226)));
             label.Inlines.Clear();
-            label.Inlines.Add(new Run(weeklyLabel) { FontSize = 13, FontWeight = FontWeights.SemiBold });
+            var quotaSection = new Span { ToolTip = resetLabel + resetTime
+                + (forecast != null && !showForecast ? "\n" + ForecastTooltip() : "") };
+            quotaSection.Inlines.Add(new Run(weeklyLabel) { FontSize = 13, FontWeight = FontWeights.SemiBold });
             var value = new Run(amount) { FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = ink };
             if (hasRemaining)
                 value.Foreground = quota.Remaining.Value <= 10
@@ -875,21 +906,20 @@ namespace CodexQuotaBar
                     : quota.Remaining.Value <= 20
                     ? new SolidColorBrush(lightTheme ? Color.FromRgb(138, 75, 0) : Color.FromRgb(229, 184, 110))
                     : new SolidColorBrush(lightTheme ? Color.FromRgb(40, 97, 69) : Color.FromRgb(165, 217, 183));
-            label.Inlines.Add(value);
-            if (remainingSuffix.Length > 0) label.Inlines.Add(new Run(remainingSuffix) { FontSize = 13, FontWeight = FontWeights.SemiBold });
-            label.Inlines.Add(new InlineUIContainer(new Border { Width = 1, Height = 12, Margin = new Thickness(9, 0, 9, 0), Background = surface.BorderBrush }) { BaselineAlignment = BaselineAlignment.Center });
-            label.Inlines.Add(new Run(resetLabel));
-            label.Inlines.Add(new Run(resetTime) { FontSize = 13, Foreground = ink });
+            quotaSection.Inlines.Add(value);
+            if (remainingSuffix.Length > 0) quotaSection.Inlines.Add(new Run(remainingSuffix) { FontSize = 13, FontWeight = FontWeights.SemiBold });
+            label.Inlines.Add(quotaSection);
             if (showForecast)
             {
                 label.Inlines.Add(new InlineUIContainer(new Border { Width = 1, Height = 12, Margin = new Thickness(9, 0, 9, 0), Background = surface.BorderBrush }) { BaselineAlignment = BaselineAlignment.Center });
-                label.Inlines.Add(new Run(forecastLabel) { FontSize = 12.5, FontWeight = FontWeights.SemiBold, Foreground = forecastInk });
+                var forecastSection = new Span { ToolTip = ForecastTooltip() };
+                forecastSection.Inlines.Add(new Run(forecastLabel) { FontSize = 12.5, FontWeight = FontWeights.SemiBold, Foreground = forecastInk });
+                label.Inlines.Add(forecastSection);
             }
             ((MenuItem)menu.Items[0]).Header = chinese ? "刷新额度" : "Refresh quota";
             ((MenuItem)menu.Items[1]).Header = chinese ? "打开重置信息（codex-reset.com）" : "Open reset data (codex-reset.com)";
             ((MenuItem)menu.Items[2]).Header = chinese ? "退出额度显示" : "Exit quota display";
-            // The inline status needs no popup; keep a short hint only when space hides it.
-            label.ToolTip = forecast != null && !showForecast ? ForecastTooltip() : null;
+            label.ToolTip = null;
             Title = "Codex Quota Bar — " + display;
             AutomationProperties.SetName(label, display);
         }
@@ -920,8 +950,7 @@ namespace CodexQuotaBar
             bool enough = anchor.X + width <= clientRect.Right - 140 * scale;
             if (!enough && forecastInline && forecast != null)
             {
-                // Keep the original two quota fields visible when the third segment would
-                // crowd the menu. Its short status remains available in the hover tooltip.
+                // Keep the quota field visible when the forecast would crowd the menu.
                 expandedWidth = width;
                 forecastInline = false;
                 display = null;
@@ -935,7 +964,7 @@ namespace CodexQuotaBar
             {
                 // Re-enable only after there is clear spare room. Without this hysteresis,
                 // the short label fits, the expanded label does not, and the 200 ms timer
-                // repeatedly adds and removes the third segment, causing visible flicker.
+                // repeatedly adds and removes the forecast section, causing visible flicker.
                 forecastInline = true;
                 display = null;
                 UpdateText();
