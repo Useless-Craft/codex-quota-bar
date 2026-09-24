@@ -305,7 +305,7 @@ namespace CodexQuotaBar
         internal TiboForecastClient()
         {
             client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.1.9 (+https://github.com/Useless-Craft/codex-quota-bar)");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CodexQuotaBar/1.2.0 (+https://github.com/omegawork/codex-quota-bar)");
         }
 
         private async Task<PayloadResult> ReadPayload(string url)
@@ -416,7 +416,7 @@ namespace CodexQuotaBar
                     process.ErrorDataReceived += delegate { };
                     process.Start();
                     process.BeginErrorReadLine();
-                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.1.9" } });
+                    await Request("initialize", new { clientInfo = new { name = "codex_quota_bar", title = "Codex Quota Bar", version = "1.2.0" } });
                     process.StandardInput.WriteLine("{\"method\":\"initialized\",\"params\":{}}");
                 }
                 return Quota.Parse(await Request("account/rateLimits/read", null));
@@ -1132,16 +1132,17 @@ namespace CodexQuotaBar
                     string stage = "launch_codex";
                     try
                     {
-                        if (launchCodex)
+                        if (!acquired) return 0;
+                        bool shouldLaunch = launchCodex || Native.FindCodexWindows().Count == 0;
+                        if (shouldLaunch)
                         {
                             using (Process activation = Process.Start(new ProcessStartInfo(
                                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
                                 @"shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App") { UseShellExecute = true })) { }
                         }
-                        if (!acquired) return 0;
                         AppContext.SetSwitch("Switch.System.Windows.DoNotScaleForDpiChanges", false);
                         stage = "wait_for_window";
-                        if (launchCodex)
+                        if (shouldLaunch)
                         {
                             var startup = Stopwatch.StartNew();
                             while (Native.FindCodexWindows().Count == 0 && startup.Elapsed < TimeSpan.FromSeconds(120))
@@ -1150,11 +1151,9 @@ namespace CodexQuotaBar
                         if (Native.FindCodexWindows().Count == 0)
                         {
                             bool chinese = UiLanguage.ReadChinese() == true;
-                            throw new InvalidOperationException(launchCodex
-                                ? (chinese ? "等待 120 秒后仍未发现 Codex 窗口。请待 Codex 打开后再次启动额度显示。"
-                                    : "Codex did not show a window within 120 seconds. Once Codex opens, start the quota display again.")
-                                : (chinese ? "请先打开 Codex，或使用‘Codex＋额度条’快捷方式一起启动。"
-                                    : "Open Codex first, or use the Codex + quota bar shortcut to start both."));
+                            throw new InvalidOperationException(chinese
+                                ? "等待 120 秒后仍未发现 Codex 窗口。请待 Codex 打开后再次启动额度显示。"
+                                : "Codex did not show a window within 120 seconds. Once Codex opens, start the quota display again.");
                         }
                         stage = "display";
                         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };

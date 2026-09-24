@@ -1,98 +1,106 @@
 # Codex Quota Bar
 
-[English](README.en.md) · [下载 Windows 版本](https://github.com/Useless-Craft/codex-quota-bar/releases/latest) · [反馈问题](https://github.com/Useless-Craft/codex-quota-bar/issues)
+[**Download for Windows**](https://github.com/omegawork/codex-quota-bar/releases/latest/download/CodexQuotaBar-windows-x64.zip) · [简体中文](README.zh-CN.md) · [Report an issue](https://github.com/omegawork/codex-quota-bar/issues) · [Windows build](https://github.com/omegawork/codex-quota-bar/actions/workflows/windows.yml)
 
-在 Windows Codex 桌面窗口顶部、**Help / 帮助** 右侧显示每周剩余额度与重置预测。个人额度的下次重置时间放在第一段的悬停提示中。
+**Your weekly Codex quota, right where you work.**
 
-**每周额度剩余 11%**　│　**20% reset**
+Codex Quota Bar puts your remaining weekly quota beside **Help** in Codex Desktop for Windows. No extra sign-in or separate dashboard. Hover to see your personal reset time; a second segment shows a clearly labeled, experimental reset forecast.
 
-**Weekly usage limit 11% left**　│　**20% reset**
+![A real Codex Desktop window with Codex Quota Bar beside Help in dark mode](assets/hero-dark.png)
 
-右侧第二段统一显示为 `N% reset`：有效重置预告显示红色 `100% reset`；没有有效预告时显示 24 小时实验性概率，例如 `20% reset`。悬停第二段可看到预告窗口或时间，以及最近动态是可手动使用的 banked reset 还是直接重置。`100%` 表示来源存在有效预告，不代表额度已经到账，也不是 OpenAI 对重置结果的保证。
+<details><summary>See the light theme</summary>
 
-以上是格式示例。实际数值来自当前登录的 Codex 账户。
+![Codex Quota Bar beside Help in light mode](assets/hero-light.png)
 
-## 功能
+</details>
 
-- 圆角胶囊只显示两段：周剩余额度和重置预测。悬停第一段查看个人重置时间；悬停第二段查看简短的预告与最近动态。空间不足时，第二段会收起并合并到第一段悬停提示。
-- 自动适配亮色 / 暗色主题；剩余不超过 20% 时显示橙色，不超过 10% 时显示红色。
-- 跟随 Codex 界面语言：中文使用中文，其余语言使用英文；时间按本机时区、24 小时制显示。
-- 支持多个 Codex 窗口，监听窗口移动事件以即时跟随；随窗口最小化、遮挡和关闭。
-- 每 60 秒共享刷新一次额度；右键可手动刷新或退出。
-- 每 15 分钟异步刷新公开重置动态，两个只读请求并行执行，最长等待 30 秒；不发送账户 ID、额度、登录信息或 X 凭据。
-- 有效预告显示红色 `100% reset`，否则显示来源给出的 24 小时概率；已发生的重置或 banked reset 不会把概率遮住三天。无可用数据时显示 `--% reset`。
-- 第二段悬停说明区分 banked reset（可手动使用）和直接重置，并注明预告的具体时间或窗口截止时间；右键可打开数据来源页面。
-- 专用快捷方式同时启动 Codex 和额度条；最后一个 Codex 窗口关闭后，工具及其读取进程退出。
+## Try it in three steps
 
-## 运行要求
+1. [Download the Windows ZIP](https://github.com/omegawork/codex-quota-bar/releases/latest/download/CodexQuotaBar-windows-x64.zip).
+2. Extract it to a folder you want to keep.
+3. Double-click `CodexQuotaBar.exe`. It attaches to an open Codex window, or starts Codex and waits for it.
 
-- Windows 10 / 11，x64，.NET Framework 4.8。
-- 已安装并登录的 Codex Windows 桌面应用，顶部菜单栏可见。首次使用前先正常打开一次 Codex。
-- 不支持浏览器版、macOS 或 Linux。
+Windows 10/11 x64, .NET Framework 4.8, and the signed-in Codex Desktop app are required. This is an independent, unsigned community utility; it does not modify Codex. [Check the SHA256](https://github.com/omegawork/codex-quota-bar/releases/latest) before running a download.
 
-这是社区独立工具，与 OpenAI 无隶属关系。它不修改 Codex 安装文件；菜单结构、CLI 位置或接口随 Codex 更新变化时，仍可能需要适配。发布程序未进行代码签名。
+The weekly quota comes from your Codex account through its local app server. The reset forecast comes from [codex-reset.com](https://codex-reset.com/) and is **experimental**; the public forecast request sends no account ID, quota, login details, or X credentials. `100% reset` means an active source announcement, not a confirmed quota reset or an OpenAI guarantee.
 
-## 下载与使用
+## Features
 
-1. 从 [Releases](https://github.com/Useless-Craft/codex-quota-bar/releases/latest) 下载 `codex-quota-bar-v1.1.9-windows-x64.zip`。
-2. **完整解压**到一个准备长期保留的目录。
-3. Codex 已打开时，双击 `CodexQuotaBar.exe` 即可显示额度。
+- A compact rounded capsule with only two segments: weekly remaining quota and reset forecast. Hover over the first for your personal reset time, or the second for a short announcement and recent-update summary. If space is too tight, the forecast moves into the first segment's tooltip.
+- Automatic light and dark appearance; orange at 20% remaining or less, red at 10% or less.
+- Follows the Codex UI language: Chinese for Chinese locales, English otherwise. Dates use local time and a 24-hour clock.
+- Multiple Codex windows, with window-event tracking for immediate movement and matching minimize, occlusion and close behavior.
+- One shared quota refresh every 60 seconds. Right-click to refresh manually or exit.
+- Public reset data refreshes asynchronously every 15 minutes. Two read-only requests run in parallel with a 30-second timeout. No account ID, quota, login information or X credentials are sent.
+- An active announcement shows red `100% reset`; otherwise the bar shows the source's experimental 24-hour probability. Earlier usage or banked resets no longer hide the probability for three days. Unavailable data appears as `--% reset`.
+- The forecast tooltip distinguishes a manual banked reset from a direct reset and shows the announced time or window end. Right-click opens the data source.
+- Double-clicking the executable starts Codex if needed. Closing the last Codex window closes the tool and its reader process.
 
-要让 Codex 和额度条一起启动，在解压目录打开 PowerShell，运行一次：
+## Requirements
+
+- Windows 10 / 11, x64, with .NET Framework 4.8.
+- The Codex Windows desktop app, installed and signed in, with its top menu visible. Open Codex normally at least once before using this tool.
+- Browser, macOS and Linux versions are not supported.
+
+This is an independent community project, unaffiliated with OpenAI. It does not modify Codex installation files. Changes to Codex menus, CLI locations or interfaces may require an update to this tool. Release executables are unsigned.
+
+## Optional Start menu shortcut
+
+If you want a dedicated Start menu entry, open PowerShell in the extracted folder and run once:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\create-shortcut.ps1
 ```
 
-随后使用开始菜单中的 **Codex + Quota Bar** 快捷方式；也可以手动将该快捷方式固定到任务栏。脚本只为当前用户创建一个快捷方式，不需要管理员权限。上述执行策略只作用于这一次 PowerShell 进程。
+Use **Codex + Quota Bar** in the Start menu afterwards. You can also pin that shortcut to the taskbar manually. The script creates one shortcut for the current user and does not need administrator privileges. The execution policy above applies only to that PowerShell process. The shortcut is optional; double-clicking the EXE also starts Codex when needed.
 
-创建到桌面或其他目录：
+To create the shortcut on your desktop or in another folder:
 
 ```powershell
 .\create-shortcut.ps1 -ShortcutDirectory ([Environment]::GetFolderPath('Desktop'))
 ```
 
-快捷方式指向解压目录，移动工具后请重新创建。原有 Codex 入口仍可使用，需要联动时使用新快捷方式。本工具不设置开机启动，不安装常驻监视器。
+The shortcut points to the extracted folder; recreate it if you move the tool. The tool does not configure startup at login or install a resident watcher.
 
-同一用户会话只运行一个实例，再次启动不会叠加额度条。右键任意额度条选择“退出额度显示”，会退出所有额度条，Codex 保持运行。
+Only one instance runs per user session. Starting it again does not stack bars. Choosing **Exit quota display** on any bar closes all quota bars and leaves Codex running.
 
-## 从源码构建
+## Build from source
 
-无需 Visual Studio、NuGet 或第三方库，使用本机 .NET Framework 编译器：
+Uses the local .NET Framework compiler, without Visual Studio, NuGet or third-party libraries:
 
 ```powershell
-git clone https://github.com/Useless-Craft/codex-quota-bar.git
+git clone https://github.com/omegawork/codex-quota-bar.git
 cd codex-quota-bar
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-生成的 `CodexQuotaBar.exe` 位于仓库根目录。重新编译或覆盖更新前，请先退出该目录中运行的额度工具。
+The output is `CodexQuotaBar.exe` in the repository root. Exit the quota tool running from that directory before rebuilding or replacing it.
 
-| 文件 | 用途 |
+| File | Purpose |
 | --- | --- |
-| `QuotaBar.cs` | WPF 显示、窗口跟随、额度读取与进程生命周期 |
-| `quota.manifest` | 普通用户权限与 DPI 声明 |
-| `build.ps1` | x64 编译 |
-| `create-shortcut.ps1` | 创建联动启动快捷方式 |
-| `tests/test-forecast.ps1` | 重置动态解析测试 |
+| `QuotaBar.cs` | WPF display, window tracking, quota reader and process lifecycle |
+| `quota.manifest` | User-level privileges and DPI settings |
+| `build.ps1` | x64 build |
+| `create-shortcut.ps1` | Linked-startup shortcut creation |
+| `tests/test-forecast.ps1` | Reset-data parser checks |
 
-## 工作方式与数据
+## How it works and data handling
 
-工具通过已安装的 Codex CLI 启动自有 `app-server --stdio` 子进程，调用 `account/rateLimits/read`。仅显示 `codex` 额度桶中长度为 10080 分钟的周额度；缺失数据不会当作 0%，到达重置时间后等待服务返回新数据。
+The tool starts its own installed Codex CLI process with `app-server --stdio` and calls `account/rateLimits/read`. It shows only the 10080-minute weekly window in the `codex` quota bucket. Missing data is not interpreted as 0%; after a reset time passes, the display waits for fresh service data.
 
-第二段读取 [codex-reset.com](https://codex-reset.com/) 的公开只读 JSON：`/api/forecast` 提供 24 小时实验性概率和当前有效预告，`/api/feed` 提供 Tibo 原帖及最近动态。历史动态只在悬停提示中说明，不改变顶部概率；仅有效预告覆盖概率，预告结束后恢复概率。接口可能延迟、不可用或改变，且不代表 OpenAI 的服务承诺。右键菜单中的 **打开重置信息（codex-reset.com）** 会打开数据来源页面。
+It reuses the existing Codex login, does not start model conversations, purchase quota or redeem reset credits, and has no additional telemetry or upload service. It reads `locale` from `CODEX_HOME/computer-use/config.json`, defaulting to the user's `.codex` folder when `CODEX_HOME` is unset. Temporarily unavailable locale data preserves the last language; the initial default is English.
 
-工具复用 Codex 现有登录，不发起模型对话、购买额度或使用重置券，也没有额外的遥测或上传服务。语言只读 `CODEX_HOME/computer-use/config.json` 中的 `locale`，未设置 `CODEX_HOME` 时使用当前用户的 `.codex` 目录。暂时无法读取时保留上次语言，初始默认为英文。
+The second segment reads public, read-only JSON from [codex-reset.com](https://codex-reset.com/): `/api/forecast` supplies the experimental 24-hour probability and active reset announcement, while `/api/feed` supplies Tibo posts and recent updates. Past events appear only in the tooltip; they do not change the probability shown on the bar. Only an active announcement replaces the probability, which returns when the announcement ends. The service may be delayed, unavailable or changed and is not an OpenAI guarantee. **Open reset data (codex-reset.com)** opens the provider page.
 
-菜单位置由临时 UI Automation 子进程读取，5 秒超时后终止，保留上次有效位置。正常每 30 秒复核，失败后每 10 秒重试；新窗口、语言或 DPI 变化会触发重新定位。窗口移动使用缓存位置与 WinEvent，不等待菜单读取完成。重置动态请求在独立异步流程中执行，不阻塞移动、菜单定位、额度读取或退出；短暂失败时保留仍在有效期内的上次结果。
+A temporary UI Automation process locates the menu, with a five-second timeout. Failed probes retain the last valid position. A successful probe is rechecked after 30 seconds, a failed one after 10 seconds; new windows, language changes and DPI changes trigger another probe. Movement uses cached positions and WinEvent notifications without waiting for menu reads. Reset-data requests run in a separate asynchronous flow and cannot block movement, menu discovery, quota reads or exit; a transient failure keeps the last result while it remains fresh.
 
-## 常见问题与排查
+## Troubleshooting
 
-- **看不到额度条**：确认顶部 Help / 帮助可见、窗口足够宽，稍等菜单定位；最小化或空间不足时会隐藏。读取额度失败显示“未更新”，可右键刷新。
-- **更新后启动较慢**：`--launch` 最多等待 120 秒让 Codex 窗口出现；超过时限后可等 Codex 打开，再运行工具。
-- **其他错误**：未处理错误会在同目录覆盖写入 `last-error.txt`，包含时间、发生阶段和异常堆栈。正常运行不持续写日志。
+- **No bar:** keep Help visible and make the window wide enough. Allow time for menu discovery. The bar hides when minimized or when space is insufficient. A quota read failure shows **Not updated**; right-click to refresh.
+- **Slow Codex startup after an update:** starting the EXE waits up to 120 seconds for a window when Codex is closed. If that expires, open Codex and then start the tool again.
+- **Other errors:** unhandled errors overwrite `last-error.txt` beside the executable with a timestamp, stage and exception stack. Normal operation does not continuously write logs.
 
-命令行操作：
+Command-line operations:
 
 ```powershell
 .\CodexQuotaBar.exe --launch
@@ -100,10 +108,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 .\CodexQuotaBar.exe --check "$PWD\quota-check.json"
 ```
 
-`--check` 只读检查实际额度、菜单定位及日期格式。报告包含账户 ID 和窗口标题；提交 issue 前请删除这些字段及日志中的个人路径。日志和检查报告不应提交进 Git。
+`--check` reads live quota and checks menu placement and date formatting. Its report includes the account ID and window title. Remove those fields and personal paths in logs before attaching them to an issue. Do not commit diagnostic reports or logs.
 
-卸载时先退出额度条，再删除工具目录和自己创建的快捷方式即可。
+To uninstall, exit the tool and delete its folder and the shortcuts you created.
 
-## 许可证
+## License
 
-[MIT](LICENSE)。本仓库不包含 Codex 应用文件或 OpenAI 图标。
+[MIT](LICENSE). Codex application files and OpenAI icons are not included.

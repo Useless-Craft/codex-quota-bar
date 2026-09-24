@@ -1,0 +1,32 @@
+name: Windows build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        shell: powershell
+        run: .\build.ps1
+      - name: Forecast parsing checks
+        shell: powershell
+        run: .\tests\test-forecast.ps1
+      - name: Check portable package
+        shell: powershell
+        run: |
+          .\package.ps1 -Version 1.2.0
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead('dist\CodexQuotaBar-windows-x64.zip')
+          try {
+            $actual = @($zip.Entries | ForEach-Object { $_.FullName } | Sort-Object)
+            $expected = @('CodexQuotaBar.exe', 'LICENSE', 'README.md', 'README.zh-CN.md', 'create-shortcut.ps1') | Sort-Object
+            if (Compare-Object $actual $expected) { throw 'Portable package contents differ from the allowlist.' }
+          }
+          finally { $zip.Dispose() }
+          $actualHash = (Get-FileHash 'dist\CodexQuotaBar-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedHash = (Get-Content 'dist\SHA256SUMS-v1.2.0.txt' -Raw).Split(' ')[0]
+          if ($actualHash -ne $expectedHash) { throw 'Portable package checksum mismatch.' }
